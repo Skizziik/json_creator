@@ -464,11 +464,11 @@ class App {
     if (!project) {
       this.els.content.innerHTML = `
         <div class="welcome-screen">
-          <div class="welcome-logo"><i class="bi bi-dpad-fill"></i></div>
-          <div class="welcome-title">Welcome to Loot<span class="accent">Forge</span></div>
+          <div class="welcome-logo"><i class="bi bi-database-fill-gear"></i></div>
+          <div class="welcome-title">RAG <span class="accent">Constructor</span></div>
           <p class="welcome-desc">
-            Your personal RAG database constructor.<br>
-            Create a project to start crafting your knowledge base — one chunk at a time.
+            by Tryll Engine<br><br>
+            Create a project to start building your knowledge base — one chunk at a time.
           </p>
           <div style="display:flex;gap:12px;margin-top:8px;">
             <button class="btn btn-accent" id="welcomeNewProject">
@@ -688,7 +688,7 @@ class App {
       this.selected = null;
       this.store.createProject(name);
       this._closeModal();
-      this._toast('Project created! Let the crafting begin.', 'success');
+      this._toast('Project created!', 'success');
     };
 
     confirm.addEventListener('click', create);

@@ -564,6 +564,26 @@ body {
   gap: 6px;
 }
 
+.sidebar-links {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.sidebar-links a {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color var(--transition);
+}
+
+.sidebar-links a:hover {
+  color: var(--accent);
+}
+
 /* =============================================
    MAIN CONTENT
    ============================================= */
