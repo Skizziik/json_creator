@@ -550,6 +550,7 @@ class App {
           <div class="field-group">
             <label class="field-label">ID</label>
             <input class="field-input" type="text" id="chunkId" placeholder="e.g. sword_basic" value="${this._escAttr(chunk.id)}">
+            <div class="id-warning hidden" id="idWarning"><i class="bi bi-exclamation-triangle"></i> This ID already exists. Try adding _1, _2, etc.</div>
           </div>
           <div class="field-group">
             <label class="field-label">Text</label>
@@ -647,7 +648,6 @@ class App {
         this._saveCurrentChunk();
       }
     };
-    // Clean up old handler
     if (this._ctrlSHandler) document.removeEventListener('keydown', this._ctrlSHandler);
     this._ctrlSHandler = handler;
     document.addEventListener('keydown', handler);

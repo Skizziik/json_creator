@@ -772,6 +772,19 @@ body {
   color: var(--text-muted);
 }
 
+/* ID duplicate warning */
+.id-warning {
+  font-size: 12px;
+  color: var(--danger);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.id-warning.hidden {
+  display: none;
+}
+
 /* Character counter */
 .char-counter {
   text-align: right;
@@ -827,7 +840,6 @@ body {
   background: var(--accent-soft);
 }
 
-/* Save bar */
 .editor-save-bar {
   display: flex;
   gap: 12px;
