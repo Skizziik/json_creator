@@ -7,7 +7,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'alive', app: 'RAG Constructor', timestamp: Date.now() });
+  res.json({ status: 'alive', app: 'Dataset Builder', timestamp: Date.now() });
 });
 
 app.get('*', (_req, res) => {
@@ -15,5 +15,5 @@ app.get('*', (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`RAG Constructor by Tryll Engine — running on port ${PORT}`);
+  console.log(`Dataset Builder by Tryll Engine — running on port ${PORT}`);
 });

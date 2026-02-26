@@ -1,5 +1,5 @@
 /* =============================================
-   LOOT FORGE — RAG Database Constructor
+   Dataset Builder by Tryll Engine
    Main Application
    ============================================= */
 
@@ -207,6 +207,18 @@ class Store {
     const project = this.getCurrentProject();
     if (!project) return 0;
     return project.categories.reduce((sum, cat) => sum + cat.chunks.length, 0);
+  }
+
+  isChunkIdTaken(id, excludeUid) {
+    if (!id) return false;
+    const project = this.getCurrentProject();
+    if (!project) return false;
+    for (const cat of project.categories) {
+      for (const chunk of cat.chunks) {
+        if (chunk._uid !== excludeUid && chunk.id === id) return true;
+      }
+    }
+    return false;
   }
 
   // ---- IMPORT ----
@@ -465,7 +477,7 @@ class App {
       this.els.content.innerHTML = `
         <div class="welcome-screen">
           <div class="welcome-logo"><img src="/img/logo.png" alt="Tryll Engine" class="welcome-logo-img"></div>
-          <div class="welcome-title">RAG <span class="accent">Constructor</span></div>
+          <div class="welcome-title">Dataset <span class="accent">Builder</span></div>
           <p class="welcome-desc">
             by Tryll Engine<br><br>
             Create a project to start building your knowledge base — one chunk at a time.
@@ -541,7 +553,8 @@ class App {
           </div>
           <div class="field-group">
             <label class="field-label">Text</label>
-            <textarea class="field-textarea" id="chunkText" placeholder="Main chunk content...">${this._esc(chunk.text)}</textarea>
+            <textarea class="field-textarea" id="chunkText" placeholder="Main chunk content..." maxlength="2000">${this._esc(chunk.text)}</textarea>
+            <div class="char-counter" id="charCounter"><span id="charCount">${(chunk.text || '').length}</span> / 2000</div>
           </div>
         </div>
 
@@ -602,6 +615,19 @@ class App {
     if (deleteBtn) deleteBtn.addEventListener('click', () => this._deleteCurrentChunk());
     if (duplicateBtn) duplicateBtn.addEventListener('click', () => this._duplicateCurrentChunk());
     if (addCfBtn) addCfBtn.addEventListener('click', () => this._addCustomField());
+
+    // Character counter for text field
+    const chunkText = $('#chunkText');
+    const charCount = $('#charCount');
+    const charCounter = $('#charCounter');
+    if (chunkText && charCount) {
+      chunkText.addEventListener('input', () => {
+        const len = chunkText.value.length;
+        charCount.textContent = len;
+        charCounter.classList.toggle('char-counter--warn', len >= 1800);
+        charCounter.classList.toggle('char-counter--limit', len >= 2000);
+      });
+    }
 
     // Remove custom field (delegated)
     if (cfContainer) {
@@ -835,6 +861,14 @@ class App {
     const pageTitle = ($('#metaPageTitle') || {}).value || '';
     const source = ($('#metaSource') || {}).value || '';
     const license = ($('#metaLicense') || {}).value || '';
+
+    // Check for duplicate ID
+    if (idVal && this.store.isChunkIdTaken(idVal, this.selected.chunkUid)) {
+      this._toast('This ID already exists. Try adding _1, _2, etc.', 'error');
+      const idInput = $('#chunkId');
+      if (idInput) idInput.style.borderColor = 'var(--danger)';
+      return;
+    }
 
     // Gather custom fields
     const customFields = [];
