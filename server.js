@@ -199,6 +199,30 @@ app.post('/api/projects/:name/import', (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ---- BULK UPDATE METADATA ----
+app.post('/api/projects/:name/bulk-metadata', (req, res) => {
+  try {
+    const result = store.bulkUpdateMetadata(req.params.name, req.body.field, req.body.value, req.body.category);
+    if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.params.name });
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// ---- MERGE PROJECTS ----
+app.post('/api/projects/:name/merge', (req, res) => {
+  try {
+    const result = store.mergeProjects(req.params.name, req.body.target);
+    if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.body.target });
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// ---- EXPORT CATEGORY ----
+app.get('/api/projects/:name/categories/:catName/export', (req, res) => {
+  try { res.json(store.exportCategory(req.params.name, req.params.catName)); }
+  catch (e) { res.status(404).json({ error: e.message }); }
+});
+
 // ---- SPA FALLBACK ----
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

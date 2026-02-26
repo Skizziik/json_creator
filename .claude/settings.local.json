@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git branch -M main)",
+      "Bash(git push -u origin main)",
+      "Bash(git add public/index.html public/css/style.css public/js/app.js server.js)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(git add public/index.html public/css/style.css public/js/app.js public/img/logo.png)",
+      "Bash(curl -s http://localhost:3000/health)",
+      "Bash(timeout 5 node index.js)",
+      "Bash(printf '{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":1,\"\"method\"\":\"\"initialize\"\",\"\"params\"\":{\"\"protocolVersion\"\":\"\"2024-11-05\"\",\"\"capabilities\"\":{},\"\"clientInfo\"\":{\"\"name\"\":\"\"test\"\",\"\"version\"\":\"\"1.0.0\"\"}}}\\\\n{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":2,\"\"method\"\":\"\"tools/list\"\",\"\"params\"\":{}}\\\\n')",
+      "Bash(python3 -c \"import sys,json; d=json.loads\\(sys.stdin.read\\(\\)\\); print\\(f''Tools: {len\\(d[\"\"result\"\"][\"\"tools\"\"]\\)}''\\); [print\\(f'' - {t[\"\"name\"\"]}''\\) for t in d[''result''][''tools'']]\")",
+      "Bash(node -e \"let d='''';process.stdin.on\\(''data'',c=>d+=c\\);process.stdin.on\\(''end'',\\(\\)=>{const r=JSON.parse\\(d\\);console.log\\(''Tools:'',r.result.tools.length\\);r.result.tools.forEach\\(t=>console.log\\('' -'',t.name\\)\\)}\\)\")",
+      "Bash(npm publish --access public)",
+      "Bash(timeout 3 node server.js)",
+      "Bash(git add index.js package.json)",
+      "Bash(npm publish)",
+      "Bash(git add public/js/app.js)",
+      "Bash(git add -A)"
+    ]
+  }
+}
