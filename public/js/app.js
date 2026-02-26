@@ -336,6 +336,10 @@ class App {
       chunkCountValue: $('#chunkCountValue'),
       importProjectBtn: $('#importProjectBtn'),
       importFileInput: $('#importFileInput'),
+      searchChunkBtn: $('#searchChunkBtn'),
+      chunkSearchWrap: $('#chunkSearchWrap'),
+      chunkSearchInput: $('#chunkSearchInput'),
+      clearSearchBtn: $('#clearSearchBtn'),
     };
   }
 
@@ -367,6 +371,14 @@ class App {
 
     // Category tree — delegated events
     this.els.categoryTree.addEventListener('click', (e) => this._handleTreeClick(e));
+
+    // Chunk search
+    this.els.searchChunkBtn.addEventListener('click', () => this._toggleSearch());
+    this.els.chunkSearchInput.addEventListener('input', () => this._filterChunks());
+    this.els.clearSearchBtn.addEventListener('click', () => this._clearSearch());
+    this.els.chunkSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this._clearSearch();
+    });
 
     // Export
     this.els.exportBtn.addEventListener('click', () => this._handleExport());
@@ -832,6 +844,56 @@ class App {
       this.store.deleteCategory(catId);
       this._toast('Category deleted.', 'info');
     }
+  }
+
+  // ---- CHUNK SEARCH ----
+
+  _toggleSearch() {
+    const wrap = this.els.chunkSearchWrap;
+    const isHidden = wrap.classList.contains('hidden');
+    if (isHidden) {
+      wrap.classList.remove('hidden');
+      this.els.chunkSearchInput.focus();
+    } else {
+      this._clearSearch();
+    }
+  }
+
+  _clearSearch() {
+    this.els.chunkSearchInput.value = '';
+    this.els.chunkSearchWrap.classList.add('hidden');
+    // Show all chunks
+    this.els.categoryTree.querySelectorAll('.chunk-item').forEach(el => el.style.display = '');
+    this.els.categoryTree.querySelectorAll('.category-item').forEach(el => el.style.display = '');
+  }
+
+  _filterChunks() {
+    const query = this.els.chunkSearchInput.value.toLowerCase().trim();
+    const cats = this.els.categoryTree.querySelectorAll('.category-item');
+
+    cats.forEach(catEl => {
+      const chunks = catEl.querySelectorAll('.chunk-item');
+      let visibleCount = 0;
+
+      chunks.forEach(chunkEl => {
+        const name = chunkEl.querySelector('.chunk-item-name')?.textContent.toLowerCase() || '';
+        const match = !query || name.includes(query);
+        chunkEl.style.display = match ? '' : 'none';
+        if (match) visibleCount++;
+      });
+
+      // Hide category if no chunks match (but always show if query is empty)
+      catEl.style.display = (!query || visibleCount > 0) ? '' : 'none';
+
+      // Auto-expand categories with matches
+      if (query && visibleCount > 0) {
+        const chunkList = catEl.querySelector('.chunk-list');
+        if (chunkList && chunkList.classList.contains('collapsed')) {
+          chunkList.classList.remove('collapsed');
+          chunkList.style.maxHeight = chunkList.scrollHeight + 'px';
+        }
+      }
+    });
   }
 
   // ---- CHUNK ACTIONS ----

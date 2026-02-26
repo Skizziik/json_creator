@@ -45,9 +45,19 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <span class="sidebar-title"><i class="bi bi-folder2-open"></i> Categories</span>
-        <button class="btn-icon btn-icon--accent" id="addCategoryBtn" title="New Category">
-          <i class="bi bi-plus-lg"></i>
-        </button>
+        <div class="sidebar-header-actions">
+          <button class="btn-icon" id="searchChunkBtn" title="Search chunks"><i class="bi bi-search"></i></button>
+          <button class="btn-icon btn-icon--accent" id="addCategoryBtn" title="New Category">
+            <i class="bi bi-plus-lg"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Chunk search (hidden by default) -->
+      <div class="chunk-search hidden" id="chunkSearchWrap">
+        <i class="bi bi-search chunk-search-icon"></i>
+        <input type="text" id="chunkSearchInput" placeholder="Search by chunk ID..." maxlength="100">
+        <button class="btn-icon" id="clearSearchBtn" title="Clear"><i class="bi bi-x-lg"></i></button>
       </div>
 
       <!-- New category input (hidden by default) -->

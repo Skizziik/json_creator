@@ -363,6 +363,44 @@ body {
   color: var(--accent);
 }
 
+.sidebar-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* Chunk search */
+.chunk-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-main);
+}
+
+.chunk-search-icon {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.chunk-search input {
+  flex: 1;
+  height: 28px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 12px;
+  padding: 0 8px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.chunk-search input:focus {
+  border-color: var(--accent);
+}
+
 /* New category input */
 .new-category-input {
   display: flex;
