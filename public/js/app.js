@@ -443,7 +443,9 @@ class App {
       html += `<option value="${this._escAttr(p.name)}" ${sel}>${this._esc(p.name)}</option>`;
     }
     this.els.projectSelect.innerHTML = html;
-    if (!currentName && projects.length === 0) {
+    if (currentName) {
+      this.els.projectSelect.value = currentName;
+    } else {
       this.els.projectSelect.value = '';
     }
   }
