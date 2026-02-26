@@ -209,6 +209,57 @@ class Store {
     return project.categories.reduce((sum, cat) => sum + cat.chunks.length, 0);
   }
 
+  // ---- IMPORT ----
+
+  importProject(name, jsonArray) {
+    const STANDARD_META = new Set(['page_title', 'source', 'license']);
+
+    const project = {
+      id: uid(),
+      name: name.trim(),
+      createdAt: new Date().toISOString(),
+      categories: [],
+    };
+
+    // Single category for all imported chunks
+    const category = {
+      id: uid(),
+      name: 'Imported',
+      expanded: true,
+      chunks: [],
+    };
+
+    for (const entry of jsonArray) {
+      const meta = entry.metadata || {};
+      const customFields = [];
+
+      // Separate standard from custom metadata
+      for (const [key, value] of Object.entries(meta)) {
+        if (!STANDARD_META.has(key)) {
+          customFields.push({ key, value: String(value ?? '') });
+        }
+      }
+
+      category.chunks.push({
+        _uid: uid(),
+        id: entry.id || '',
+        text: entry.text || '',
+        metadata: {
+          page_title: meta.page_title || '',
+          source: meta.source || '',
+          license: meta.license || '',
+        },
+        customFields,
+      });
+    }
+
+    project.categories.push(category);
+    this.data.projects.push(project);
+    this.data.currentProjectId = project.id;
+    this._save();
+    return project;
+  }
+
   // ---- EXPORT ----
 
   exportJSON() {
@@ -271,6 +322,8 @@ class App {
       modalContent: $('#modalContent'),
       toastContainer: $('#toastContainer'),
       chunkCountValue: $('#chunkCountValue'),
+      importProjectBtn: $('#importProjectBtn'),
+      importFileInput: $('#importFileInput'),
     };
   }
 
@@ -283,6 +336,10 @@ class App {
 
     // New project
     this.els.newProjectBtn.addEventListener('click', () => this._showNewProjectModal());
+
+    // Import project
+    this.els.importProjectBtn.addEventListener('click', () => this.els.importFileInput.click());
+    this.els.importFileInput.addEventListener('change', (e) => this._handleImport(e));
 
     // Delete project
     this.els.deleteProjectBtn.addEventListener('click', () => this._handleDeleteProject());
@@ -413,12 +470,19 @@ class App {
             Your personal RAG database constructor.<br>
             Create a project to start crafting your knowledge base — one chunk at a time.
           </p>
-          <button class="btn btn-accent welcome-btn" id="welcomeNewProject">
-            <i class="bi bi-plus-lg"></i> New Project
-          </button>
+          <div style="display:flex;gap:12px;margin-top:8px;">
+            <button class="btn btn-accent" id="welcomeNewProject">
+              <i class="bi bi-plus-lg"></i> New Project
+            </button>
+            <button class="btn btn-secondary" id="welcomeImport">
+              <i class="bi bi-upload"></i> Import JSON
+            </button>
+          </div>
         </div>`;
       const btn = $('#welcomeNewProject');
       if (btn) btn.addEventListener('click', () => this._showNewProjectModal());
+      const impBtn = $('#welcomeImport');
+      if (impBtn) impBtn.addEventListener('click', () => this.els.importFileInput.click());
       return;
     }
 
@@ -633,6 +697,39 @@ class App {
       if (e.key === 'Enter') create();
       if (e.key === 'Escape') this._closeModal();
     });
+  }
+
+  _handleImport(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    // Reset input so same file can be re-imported
+    e.target.value = '';
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+
+        // Validate: must be an array of objects with at least `id`
+        if (!Array.isArray(parsed)) {
+          this._toast('Invalid format: expected a JSON array.', 'error');
+          return;
+        }
+        if (parsed.length === 0) {
+          this._toast('JSON array is empty — nothing to import.', 'error');
+          return;
+        }
+
+        const projectName = file.name.replace(/\.json$/i, '');
+        const project = this.store.importProject(projectName, parsed);
+        this.selected = null;
+        this.render();
+        this._toast(`Imported! ${parsed.length} chunks loaded into "${project.name}".`, 'success');
+      } catch (err) {
+        this._toast('Failed to parse JSON: ' + err.message, 'error');
+      }
+    };
+    reader.readAsText(file);
   }
 
   _handleDeleteProject() {
