@@ -8,8 +8,17 @@
 // =============================================
 const CONFIG = {
   STORAGE_KEY: 'lootforge_data',
+  ONBOARDING_KEY: 'dataset_builder_onboarding_done',
   DEFAULT_LICENSE: 'CC BY-NC-SA 3.0',
 };
+
+const ONBOARDING_STEPS = [
+  { target: '#newProjectBtn', text: 'Start by creating a new project. Click the <strong>+</strong> button.', position: 'bottom' },
+  { target: '#addCategoryBtn', text: 'Great! Now add a <strong>category</strong> to organize your chunks.', position: 'right' },
+  { target: null, text: 'Add your first <strong>chunk</strong> inside the category.', position: 'right', dynamicTarget: '[data-action="add-chunk"].btn-icon--accent' },
+  { target: '#saveChunkBtn', text: 'Fill in the fields and hit <strong>Save</strong> when ready.', position: 'top' },
+  { target: '#exportBtn', text: 'All done! Hit <strong>Forge JSON</strong> to export your dataset.', position: 'bottom' },
+];
 
 // =============================================
 // UTILS
@@ -307,6 +316,7 @@ class App {
   constructor() {
     this.store = new Store();
     this.selected = null; // { categoryId, chunkUid }
+    this._onboardingStep = null;
     this._init();
   }
 
@@ -315,6 +325,7 @@ class App {
     this._bindEvents();
     this.store.onChange(() => this.render());
     this.render();
+    this._initOnboarding();
   }
 
   _cacheEls() {
@@ -401,6 +412,10 @@ class App {
     this._renderCategories();
     this._renderContent();
     this._renderChunkCount();
+    // Re-show onboarding if waiting for a dynamic target
+    if (this._onboardingStep !== null) {
+      setTimeout(() => this._showOnboardingStep(), 50);
+    }
   }
 
   _renderProjectSelect() {
@@ -727,6 +742,7 @@ class App {
       this.store.createProject(name);
       this._closeModal();
       this._toast('Project created!', 'success');
+      this._advanceOnboarding(0);
     };
 
     confirm.addEventListener('click', create);
@@ -815,6 +831,7 @@ class App {
     this.store.addCategory(name);
     this._hideCategoryInput();
     this._toast(`Category "${name}" created!`, 'success');
+    this._advanceOnboarding(1);
   }
 
   _handleDeleteCategory(catId) {
@@ -913,6 +930,7 @@ class App {
       if (idInput) idInput.focus();
     }, 50);
     this._toast('New chunk created. Fill it in!', 'success');
+    this._advanceOnboarding(2);
   }
 
   _saveCurrentChunk() {
@@ -951,6 +969,7 @@ class App {
     });
 
     this._toast('Chunk saved!', 'success');
+    this._advanceOnboarding(3);
   }
 
   _deleteCurrentChunk() {
@@ -1086,6 +1105,7 @@ class App {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     this._toast(`Forged! ${data.length} chunks exported.`, 'success');
+    this._advanceOnboarding(4);
   }
 
   // ---- MODAL ----
@@ -1106,6 +1126,111 @@ class App {
       toast.classList.add('leaving');
       setTimeout(() => toast.remove(), 300);
     }, 2500);
+  }
+
+  // ---- ONBOARDING ----
+
+  _initOnboarding() {
+    // Cache onboarding elements
+    this._obTip = $('#onboardingTip');
+    this._obText = $('#onboardingText');
+    this._obBadge = $('#onboardingBadge');
+    this._obSkip = $('#onboardingSkip');
+    this._obRestart = $('#restartOnboarding');
+
+    this._obSkip.addEventListener('click', () => this._endOnboarding());
+    this._obRestart.addEventListener('click', (e) => {
+      e.preventDefault();
+      this._startOnboarding();
+    });
+
+    // Start onboarding if first visit
+    if (!localStorage.getItem(CONFIG.ONBOARDING_KEY)) {
+      setTimeout(() => this._startOnboarding(), 500);
+    }
+  }
+
+  _startOnboarding() {
+    localStorage.removeItem(CONFIG.ONBOARDING_KEY);
+    this._onboardingStep = 0;
+    this._showOnboardingStep();
+  }
+
+  _endOnboarding() {
+    this._onboardingStep = null;
+    localStorage.setItem(CONFIG.ONBOARDING_KEY, '1');
+    this._obTip.classList.add('hidden');
+    // Remove pulse from any element
+    document.querySelectorAll('.onboarding-pulse').forEach(el => el.classList.remove('onboarding-pulse'));
+  }
+
+  _advanceOnboarding(completedStep) {
+    if (this._onboardingStep !== completedStep) return;
+    this._onboardingStep = completedStep + 1;
+    if (this._onboardingStep >= ONBOARDING_STEPS.length) {
+      this._endOnboarding();
+      return;
+    }
+    // Small delay so the UI updates first
+    setTimeout(() => this._showOnboardingStep(), 300);
+  }
+
+  _showOnboardingStep() {
+    if (this._onboardingStep === null) return;
+    const step = ONBOARDING_STEPS[this._onboardingStep];
+    if (!step) { this._endOnboarding(); return; }
+
+    // Remove old pulse
+    document.querySelectorAll('.onboarding-pulse').forEach(el => el.classList.remove('onboarding-pulse'));
+
+    // Find target element
+    const targetSel = step.target || step.dynamicTarget;
+    const targetEl = targetSel ? document.querySelector(targetSel) : null;
+
+    if (!targetEl) {
+      // Target not yet in DOM, wait and retry
+      this._obTip.classList.add('hidden');
+      return;
+    }
+
+    // Set content
+    this._obBadge.textContent = this._onboardingStep + 1;
+    this._obText.innerHTML = step.text;
+
+    // Add pulse to target
+    targetEl.classList.add('onboarding-pulse');
+
+    // Position tooltip
+    this._obTip.classList.remove('hidden');
+    const tipRect = this._obTip.getBoundingClientRect();
+    const elRect = targetEl.getBoundingClientRect();
+
+    let top, left;
+    switch (step.position) {
+      case 'bottom':
+        top = elRect.bottom + 10;
+        left = elRect.left + elRect.width / 2 - tipRect.width / 2;
+        break;
+      case 'top':
+        top = elRect.top - tipRect.height - 10;
+        left = elRect.left + elRect.width / 2 - tipRect.width / 2;
+        break;
+      case 'right':
+        top = elRect.top + elRect.height / 2 - tipRect.height / 2;
+        left = elRect.right + 10;
+        break;
+      case 'left':
+        top = elRect.top + elRect.height / 2 - tipRect.height / 2;
+        left = elRect.left - tipRect.width - 10;
+        break;
+    }
+
+    // Keep within viewport
+    left = Math.max(8, Math.min(left, window.innerWidth - tipRect.width - 8));
+    top = Math.max(8, Math.min(top, window.innerHeight - tipRect.height - 8));
+
+    this._obTip.style.top = top + 'px';
+    this._obTip.style.left = left + 'px';
   }
 
   // ---- ESCAPE HELPERS ----

@@ -76,6 +76,7 @@
         <div class="sidebar-links">
           <a href="https://tryllengine.com" target="_blank" rel="noopener"><i class="bi bi-globe2"></i> tryllengine.com</a>
           <a href="https://discord.gg/CMnMrmapyB" target="_blank" rel="noopener"><i class="bi bi-discord"></i> Discord</a>
+          <a href="#" id="restartOnboarding" title="Show guide"><i class="bi bi-question-circle"></i> Guide</a>
         </div>
       </div>
     </aside>
@@ -90,6 +91,15 @@
   <!-- ========== MODAL OVERLAY ========== -->
   <div class="modal-overlay hidden" id="modalOverlay">
     <div class="modal" id="modalContent"></div>
+  </div>
+
+  <!-- ========== ONBOARDING TOOLTIP ========== -->
+  <div class="onboarding-tip hidden" id="onboardingTip">
+    <div class="onboarding-tip-content">
+      <span class="onboarding-step-badge" id="onboardingBadge"></span>
+      <p class="onboarding-tip-text" id="onboardingText"></p>
+    </div>
+    <button class="onboarding-skip" id="onboardingSkip">Skip guide</button>
   </div>
 
   <!-- ========== TOAST CONTAINER ========== -->
