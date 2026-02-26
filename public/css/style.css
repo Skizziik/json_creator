@@ -1,5 +1,5 @@
 /* =============================================
-   LOOT FORGE — RAG Database Constructor
+   Tryll engine RAG Database Constructor
    Color Palette & Design Tokens
    ============================================= */
 
@@ -1295,5 +1295,310 @@ body {
 
   .content {
     padding: 16px;
+  }
+}
+
+/* =============================================
+   HISTORY DRAWER
+   ============================================= */
+
+.history-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 420px;
+  max-width: 100vw;
+  height: 100vh;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border);
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 280ms cubic-bezier(.4,0,.2,1);
+  box-shadow: -8px 0 32px rgba(0,0,0,.4);
+}
+
+.history-drawer.visible {
+  transform: translateX(0);
+}
+
+.history-drawer.hidden {
+  pointer-events: none;
+}
+
+.history-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.history-drawer-header i {
+  margin-right: 8px;
+  color: var(--accent);
+}
+
+.history-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+/* Empty state */
+.history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  text-align: center;
+  gap: 12px;
+}
+
+.history-empty i {
+  font-size: 48px;
+  opacity: .4;
+}
+
+.history-empty p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Timeline */
+.history-timeline {
+  position: relative;
+  padding-left: 24px;
+}
+
+.history-timeline::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--border);
+  border-radius: 2px;
+}
+
+/* Commit item */
+.history-commit {
+  position: relative;
+  margin-bottom: 4px;
+  border-radius: var(--radius-md);
+  transition: background var(--transition);
+}
+
+.history-commit-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: background var(--transition);
+}
+
+.history-commit-header:hover {
+  background: var(--bg-hover);
+}
+
+/* Source dot on timeline */
+.history-source-dot {
+  position: absolute;
+  left: -20px;
+  top: 16px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-sidebar);
+  flex-shrink: 0;
+}
+
+.history-source-dot--browser {
+  background: var(--accent);
+}
+
+.history-source-dot--mcp {
+  background: var(--success);
+}
+
+.history-commit-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-commit-summary {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.history-commit-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.history-commit-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.history-commit-source--browser {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.history-commit-source--mcp {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.history-commit-stats {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.history-commit-expand {
+  color: var(--text-muted);
+  font-size: 14px;
+  transition: transform 200ms ease;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.history-commit.expanded .history-commit-expand {
+  transform: rotate(180deg);
+}
+
+/* Diff panel */
+.history-diff-panel {
+  display: none;
+  padding: 0 12px 12px;
+}
+
+.history-commit.expanded .history-diff-panel {
+  display: block;
+}
+
+.history-diff-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  gap: 8px;
+}
+
+.history-diff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Diff entries */
+.history-diff {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.5;
+  border-left: 3px solid transparent;
+}
+
+.history-diff--added {
+  background: rgba(56, 161, 105, 0.08);
+  border-left-color: var(--success);
+  color: #68D391;
+}
+
+.history-diff--deleted {
+  background: rgba(229, 62, 62, 0.08);
+  border-left-color: var(--danger);
+  color: #FC8181;
+}
+
+.history-diff--modified {
+  background: rgba(214, 158, 46, 0.08);
+  border-left-color: var(--warning);
+  color: #F6E05E;
+}
+
+.history-diff-icon {
+  flex-shrink: 0;
+  font-size: 13px;
+  margin-top: 1px;
+}
+
+.history-diff-text {
+  flex: 1;
+  word-break: break-word;
+}
+
+/* Rollback button */
+.history-rollback-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.history-rollback-btn:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.history-rollback-btn i {
+  font-size: 13px;
+}
+
+/* Spinner */
+.spin {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .history-drawer {
+    width: 100vw;
   }
 }

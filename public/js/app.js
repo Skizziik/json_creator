@@ -318,6 +318,28 @@ class Store {
     if (!this.currentProjectName) return null;
     return await api(`/projects/${encodeURIComponent(this.currentProjectName)}/export`);
   }
+
+  // ---- HISTORY ----
+
+  async getHistory() {
+    if (!this.currentProjectName) return [];
+    return await api(`/projects/${encodeURIComponent(this.currentProjectName)}/history`);
+  }
+
+  async getCommitDetail(commitId) {
+    if (!this.currentProjectName) return null;
+    return await api(`/projects/${encodeURIComponent(this.currentProjectName)}/history/${commitId}`);
+  }
+
+  async rollback(commitId) {
+    if (!this.currentProjectName) return null;
+    const result = await api(`/projects/${encodeURIComponent(this.currentProjectName)}/history/${commitId}/rollback`, {
+      method: 'POST', body: { session: this.sessionCode },
+    });
+    await this._loadProject(this.currentProjectName);
+    this._notify();
+    return result;
+  }
 }
 
 // =============================================
@@ -366,6 +388,10 @@ class App {
       clearSearchBtn: $('#clearSearchBtn'),
       sessionCode: $('#sessionCode'),
       mcpStatus: $('#mcpStatus'),
+      historyBtn: $('#historyBtn'),
+      historyDrawer: $('#historyDrawer'),
+      historyCloseBtn: $('#historyCloseBtn'),
+      historyList: $('#historyList'),
     };
   }
 
@@ -398,6 +424,10 @@ class App {
     });
 
     this.els.exportBtn.addEventListener('click', () => this._handleExport());
+
+    this.els.historyBtn.addEventListener('click', () => this._toggleHistory());
+    this.els.historyCloseBtn.addEventListener('click', () => this._closeHistory());
+    this.els.historyList.addEventListener('click', (e) => this._handleHistoryClick(e));
 
     this.els.modalOverlay.addEventListener('click', (e) => {
       if (e.target === this.els.modalOverlay) this._closeModal();
@@ -1237,6 +1267,283 @@ class App {
 
     this._obTip.style.top = top + 'px';
     this._obTip.style.left = left + 'px';
+  }
+
+  // ---- HISTORY ----
+
+  _toggleHistory() {
+    const drawer = this.els.historyDrawer;
+    if (drawer.classList.contains('visible')) {
+      this._closeHistory();
+    } else {
+      this._openHistory();
+    }
+  }
+
+  async _openHistory() {
+    if (!this.store.currentProjectName) {
+      this._toast('Select a project first', 'warning');
+      return;
+    }
+    const drawer = this.els.historyDrawer;
+    drawer.classList.remove('hidden');
+    requestAnimationFrame(() => drawer.classList.add('visible'));
+    this.els.historyList.innerHTML = '<div class="history-diff-loading"><i class="bi bi-arrow-repeat spin"></i> Loading...</div>';
+    try {
+      const commits = await this.store.getHistory();
+      this._renderHistoryList(commits);
+    } catch (e) {
+      this.els.historyList.innerHTML = `<div class="history-empty"><i class="bi bi-exclamation-triangle"></i><p>${this._esc(e.message)}</p></div>`;
+    }
+  }
+
+  _closeHistory() {
+    const drawer = this.els.historyDrawer;
+    drawer.classList.remove('visible');
+    setTimeout(() => drawer.classList.add('hidden'), 300);
+  }
+
+  _renderHistoryList(commits) {
+    if (!commits || commits.length === 0) {
+      this.els.historyList.innerHTML = `
+        <div class="history-empty">
+          <i class="bi bi-clock-history"></i>
+          <p>No history yet.<br>Changes will appear here as you edit.</p>
+        </div>`;
+      return;
+    }
+
+    const html = `<div class="history-timeline">${commits.map(c => `
+      <div class="history-commit" data-commit-id="${this._escAttr(c.id)}">
+        <div class="history-source-dot history-source-dot--${c.source === 'mcp' ? 'mcp' : 'browser'}"></div>
+        <div class="history-commit-header">
+          <div class="history-commit-info">
+            <div class="history-commit-summary">${this._esc(c.summary)}</div>
+            <div class="history-commit-meta">
+              <span class="history-commit-source history-commit-source--${c.source === 'mcp' ? 'mcp' : 'browser'}">
+                <i class="bi bi-${c.source === 'mcp' ? 'robot' : 'person'}"></i> ${c.source === 'mcp' ? 'MCP' : 'Browser'}
+              </span>
+              <span>${this._formatTimeAgo(c.timestamp)}</span>
+              <span class="history-commit-stats">${c.stats.categories} cat · ${c.stats.chunks} chunks</span>
+            </div>
+          </div>
+          <i class="bi bi-chevron-down history-commit-expand"></i>
+        </div>
+        <div class="history-diff-panel" id="diff-${this._escAttr(c.id)}"></div>
+      </div>
+    `).join('')}</div>`;
+
+    this.els.historyList.innerHTML = html;
+  }
+
+  async _handleHistoryClick(e) {
+    // Expand/collapse commit
+    const header = e.target.closest('.history-commit-header');
+    if (header) {
+      const commit = header.closest('.history-commit');
+      const commitId = commit.dataset.commitId;
+      if (commit.classList.contains('expanded')) {
+        commit.classList.remove('expanded');
+      } else {
+        commit.classList.add('expanded');
+        const panel = commit.querySelector('.history-diff-panel');
+        if (!panel.dataset.loaded) {
+          panel.innerHTML = '<div class="history-diff-loading"><i class="bi bi-arrow-repeat spin"></i> Loading diff...</div>';
+          try {
+            const detail = await this.store.getCommitDetail(commitId);
+            const diffs = this._computeDiff(detail.prevSnapshot, detail.snapshot);
+            this._renderDiffPanel(panel, diffs, commitId);
+            panel.dataset.loaded = '1';
+          } catch (err) {
+            panel.innerHTML = `<div class="history-diff-loading">${this._esc(err.message)}</div>`;
+          }
+        }
+      }
+      return;
+    }
+
+    // Rollback button
+    const rollbackBtn = e.target.closest('.history-rollback-btn');
+    if (rollbackBtn) {
+      const commitId = rollbackBtn.dataset.commitId;
+      this._handleRollback(commitId);
+    }
+  }
+
+  _renderDiffPanel(panel, diffs, commitId) {
+    if (diffs.length === 0) {
+      panel.innerHTML = `
+        <div class="history-diff-list">
+          <div class="history-diff history-diff--modified">
+            <i class="bi bi-info-circle history-diff-icon"></i>
+            <span class="history-diff-text">Initial commit (no previous state)</span>
+          </div>
+        </div>
+        <button class="history-rollback-btn" data-commit-id="${this._escAttr(commitId)}">
+          <i class="bi bi-arrow-counterclockwise"></i> Rollback to this point
+        </button>`;
+      return;
+    }
+
+    const icons = { added: 'bi-plus-circle-fill', deleted: 'bi-dash-circle-fill', modified: 'bi-pencil-fill' };
+
+    const html = `
+      <div class="history-diff-list">
+        ${diffs.map(d => `
+          <div class="history-diff history-diff--${d.type}">
+            <i class="bi ${icons[d.type]} history-diff-icon"></i>
+            <span class="history-diff-text">${this._esc(d.text)}</span>
+          </div>
+        `).join('')}
+      </div>
+      <button class="history-rollback-btn" data-commit-id="${this._escAttr(commitId)}">
+        <i class="bi bi-arrow-counterclockwise"></i> Rollback to this point
+      </button>`;
+
+    panel.innerHTML = html;
+  }
+
+  async _handleRollback(commitId) {
+    this.els.modalContent.innerHTML = `
+      <div class="modal-title"><i class="bi bi-arrow-counterclockwise"></i> Rollback?</div>
+      <p class="modal-text">
+        This will restore the project to this commit's state. A new "rollback" commit will be created so you can undo this later.
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="modalCancel">Cancel</button>
+        <button class="btn btn-danger" id="confirmRollback"><i class="bi bi-arrow-counterclockwise"></i> Rollback</button>
+      </div>
+    `;
+    this.els.modalOverlay.classList.remove('hidden');
+
+    $('#confirmRollback').addEventListener('click', async () => {
+      this._closeModal();
+      try {
+        await this.store.rollback(commitId);
+        this._toast('Rolled back successfully', 'success');
+        this._closeHistory();
+      } catch (err) {
+        this._toast('Rollback failed: ' + err.message, 'error');
+      }
+    });
+
+    $('#modalCancel').addEventListener('click', () => this._closeModal());
+  }
+
+  _computeDiff(prev, curr) {
+    const diffs = [];
+
+    if (!prev) return diffs; // no previous snapshot = initial commit
+
+    const prevCats = new Map((prev.categories || []).map(c => [c.id, c]));
+    const currCats = new Map((curr.categories || []).map(c => [c.id, c]));
+
+    // Deleted categories
+    for (const [id, cat] of prevCats) {
+      if (!currCats.has(id)) {
+        diffs.push({ type: 'deleted', text: `Category "${cat.name}" removed (${cat.chunks.length} chunks)` });
+      }
+    }
+
+    // Added categories
+    for (const [id, cat] of currCats) {
+      if (!prevCats.has(id)) {
+        diffs.push({ type: 'added', text: `Category "${cat.name}" added (${cat.chunks.length} chunks)` });
+      }
+    }
+
+    // Modified categories
+    for (const [id, currCat] of currCats) {
+      const prevCat = prevCats.get(id);
+      if (!prevCat) continue;
+
+      // Renamed
+      if (prevCat.name !== currCat.name) {
+        diffs.push({ type: 'modified', text: `Category renamed: "${prevCat.name}" → "${currCat.name}"` });
+      }
+
+      // Compare chunks
+      const prevChunks = new Map(prevCat.chunks.map(ch => [ch._uid, ch]));
+      const currChunks = new Map(currCat.chunks.map(ch => [ch._uid, ch]));
+
+      for (const [uid, ch] of prevChunks) {
+        if (!currChunks.has(uid)) {
+          diffs.push({ type: 'deleted', text: `Chunk "${ch.id}" removed from "${currCat.name}"` });
+        }
+      }
+
+      for (const [uid, ch] of currChunks) {
+        if (!prevChunks.has(uid)) {
+          diffs.push({ type: 'added', text: `Chunk "${ch.id}" added to "${currCat.name}"` });
+        }
+      }
+
+      for (const [uid, currCh] of currChunks) {
+        const prevCh = prevChunks.get(uid);
+        if (!prevCh) continue;
+
+        const changes = [];
+        if (prevCh.id !== currCh.id) changes.push(`id: "${prevCh.id}" → "${currCh.id}"`);
+        if (prevCh.text !== currCh.text) {
+          const prevLen = (prevCh.text || '').length;
+          const currLen = (currCh.text || '').length;
+          changes.push(`text changed (${prevLen} → ${currLen} chars)`);
+        }
+
+        const metaKeys = new Set([
+          ...Object.keys(prevCh.metadata || {}),
+          ...Object.keys(currCh.metadata || {}),
+        ]);
+        for (const k of metaKeys) {
+          const pv = (prevCh.metadata || {})[k];
+          const cv = (currCh.metadata || {})[k];
+          if (pv !== cv) changes.push(`${k}: "${pv || ''}" → "${cv || ''}"`);
+        }
+
+        if (changes.length > 0) {
+          diffs.push({ type: 'modified', text: `Chunk "${currCh.id}" in "${currCat.name}": ${changes.join(', ')}` });
+        }
+      }
+    }
+
+    // Check for chunks moved between categories
+    // (chunk existed in prev cat A but now in curr cat B)
+    const allPrevChunkUids = new Map();
+    for (const cat of prev.categories || []) {
+      for (const ch of cat.chunks) allPrevChunkUids.set(ch._uid, { cat: cat.name, ch });
+    }
+    const allCurrChunkUids = new Map();
+    for (const cat of curr.categories || []) {
+      for (const ch of cat.chunks) allCurrChunkUids.set(ch._uid, { cat: cat.name, ch });
+    }
+
+    for (const [uid, currInfo] of allCurrChunkUids) {
+      const prevInfo = allPrevChunkUids.get(uid);
+      if (prevInfo && prevInfo.cat !== currInfo.cat) {
+        // Already handled as add+delete within categories, but let's add a move note
+        // Remove the separate add/delete and replace with move
+        const addIdx = diffs.findIndex(d => d.type === 'added' && d.text.includes(`"${currInfo.ch.id}"`) && d.text.includes(`"${currInfo.cat}"`));
+        const delIdx = diffs.findIndex(d => d.type === 'deleted' && d.text.includes(`"${prevInfo.ch.id}"`) && d.text.includes(`"${prevInfo.cat}"`));
+        if (addIdx !== -1) diffs.splice(addIdx, 1);
+        if (delIdx !== -1) diffs.splice(delIdx > addIdx ? delIdx - 1 : delIdx, 1);
+        diffs.push({ type: 'modified', text: `Chunk "${currInfo.ch.id}" moved: "${prevInfo.cat}" → "${currInfo.cat}"` });
+      }
+    }
+
+    return diffs;
+  }
+
+  _formatTimeAgo(isoString) {
+    const diff = Date.now() - new Date(isoString).getTime();
+    const secs = Math.floor(diff / 1000);
+    if (secs < 60) return 'just now';
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d ago`;
+    return new Date(isoString).toLocaleDateString();
   }
 
   // ---- ESCAPE HELPERS ----

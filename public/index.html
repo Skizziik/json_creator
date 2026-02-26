@@ -37,6 +37,9 @@
       <span class="chunk-counter" id="chunkCounter" title="Total chunks in project">
         <i class="bi bi-box-seam"></i> <span id="chunkCountValue">0</span> chunks
       </span>
+      <button class="btn-icon" id="historyBtn" title="Version History">
+        <i class="bi bi-clock-history"></i>
+      </button>
       <button class="btn btn-accent" id="exportBtn">
         <i class="bi bi-hammer"></i> Forge JSON
       </button>
@@ -107,6 +110,15 @@
     </div>
     <button class="onboarding-skip" id="onboardingSkip">Skip guide</button>
   </div>
+
+  <!-- ========== HISTORY DRAWER ========== -->
+  <aside class="history-drawer hidden" id="historyDrawer">
+    <div class="history-drawer-header">
+      <span><i class="bi bi-clock-history"></i> Version History</span>
+      <button class="btn-icon" id="historyCloseBtn"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="history-drawer-body" id="historyList"></div>
+  </aside>
 
   <!-- ========== TOAST CONTAINER ========== -->
   <div class="toast-container" id="toastContainer"></div>

@@ -68,7 +68,8 @@ app.get('/api/projects/:name', (req, res) => {
 
 app.post('/api/projects', (req, res) => {
   try {
-    const result = store.createProject(req.body.name);
+    const source = req.body.source || 'browser';
+    const result = store.createProject(req.body.name, { source });
     if (req.body.session) broadcastToBrowsers(req.body.session, 'project:created', result);
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -76,7 +77,8 @@ app.post('/api/projects', (req, res) => {
 
 app.delete('/api/projects/:name', (req, res) => {
   try {
-    const result = store.deleteProject(req.params.name);
+    const source = req.query.source || 'browser';
+    const result = store.deleteProject(req.params.name, { source });
     if (req.query.session) broadcastToBrowsers(req.query.session, 'project:deleted', result);
     res.json(result);
   } catch (e) { res.status(404).json({ error: e.message }); }
@@ -95,7 +97,8 @@ app.get('/api/projects/:name/categories', (req, res) => {
 
 app.post('/api/projects/:name/categories', (req, res) => {
   try {
-    const result = store.createCategory(req.params.name, req.body.name);
+    const source = req.body.source || 'browser';
+    const result = store.createCategory(req.params.name, req.body.name, { source });
     if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.params.name });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -103,7 +106,8 @@ app.post('/api/projects/:name/categories', (req, res) => {
 
 app.put('/api/projects/:name/categories/:catName', (req, res) => {
   try {
-    const result = store.renameCategory(req.params.name, req.params.catName, req.body.newName);
+    const source = req.body.source || 'browser';
+    const result = store.renameCategory(req.params.name, req.params.catName, req.body.newName, { source });
     if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.params.name });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -111,7 +115,8 @@ app.put('/api/projects/:name/categories/:catName', (req, res) => {
 
 app.delete('/api/projects/:name/categories/:catName', (req, res) => {
   try {
-    const result = store.deleteCategory(req.params.name, req.params.catName);
+    const source = req.query.source || 'browser';
+    const result = store.deleteCategory(req.params.name, req.params.catName, { source });
     if (req.query.session) broadcastToBrowsers(req.query.session, 'data:changed', { project: req.params.name });
     res.json(result);
   } catch (e) { res.status(404).json({ error: e.message }); }
@@ -127,7 +132,8 @@ app.post('/api/projects/:name/categories/:catId/toggle', (req, res) => {
 // ---- CHUNK API ----
 app.post('/api/projects/:name/categories/:catName/chunks', (req, res) => {
   try {
-    const result = store.addChunk(req.params.name, req.params.catName, req.body);
+    const source = req.body.source || 'browser';
+    const result = store.addChunk(req.params.name, req.params.catName, req.body, { source });
     if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.params.name });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -135,7 +141,8 @@ app.post('/api/projects/:name/categories/:catName/chunks', (req, res) => {
 
 app.post('/api/projects/:name/categories/:catName/chunks/bulk', (req, res) => {
   try {
-    const result = store.bulkAddChunks(req.params.name, req.params.catName, req.body.chunks);
+    const source = req.body.source || 'browser';
+    const result = store.bulkAddChunks(req.params.name, req.params.catName, req.body.chunks, { source });
     if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.params.name });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -143,14 +150,16 @@ app.post('/api/projects/:name/categories/:catName/chunks/bulk', (req, res) => {
 
 app.post('/api/projects/:name/categories/:catId/chunks/blank', (req, res) => {
   try {
-    const result = store.addBlankChunk(req.params.name, req.params.catId);
+    const source = req.body.source || 'browser';
+    const result = store.addBlankChunk(req.params.name, req.params.catId, { source });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 app.put('/api/projects/:name/categories/:catId/chunks/:uid', (req, res) => {
   try {
-    const result = store.updateChunk(req.params.name, req.params.catId, req.params.uid, req.body);
+    const source = req.body.source || 'browser';
+    const result = store.updateChunk(req.params.name, req.params.catId, req.params.uid, req.body, { source });
     if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.params.name });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -158,7 +167,8 @@ app.put('/api/projects/:name/categories/:catId/chunks/:uid', (req, res) => {
 
 app.delete('/api/projects/:name/categories/:catId/chunks/:uid', (req, res) => {
   try {
-    const result = store.deleteChunk(req.params.name, req.params.catId, req.params.uid);
+    const source = req.query.source || 'browser';
+    const result = store.deleteChunk(req.params.name, req.params.catId, req.params.uid, { source });
     if (req.query.session) broadcastToBrowsers(req.query.session, 'data:changed', { project: req.params.name });
     res.json(result);
   } catch (e) { res.status(404).json({ error: e.message }); }
@@ -166,14 +176,16 @@ app.delete('/api/projects/:name/categories/:catId/chunks/:uid', (req, res) => {
 
 app.post('/api/projects/:name/categories/:catId/chunks/:uid/duplicate', (req, res) => {
   try {
-    const result = store.duplicateChunk(req.params.name, req.params.catId, req.params.uid);
+    const source = req.body.source || 'browser';
+    const result = store.duplicateChunk(req.params.name, req.params.catId, req.params.uid, { source });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 app.post('/api/projects/:name/chunks/:chunkId/move', (req, res) => {
   try {
-    const result = store.moveChunk(req.params.name, req.params.chunkId, req.body.targetCategory);
+    const source = req.body.source || 'browser';
+    const result = store.moveChunk(req.params.name, req.params.chunkId, req.body.targetCategory, { source });
     if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.params.name });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -193,7 +205,8 @@ app.get('/api/projects/:name/export', (req, res) => {
 
 app.post('/api/projects/:name/import', (req, res) => {
   try {
-    const result = store.importJSON(req.params.name, req.body.data, req.body.category);
+    const source = req.body.source || 'browser';
+    const result = store.importJSON(req.params.name, req.body.data, req.body.category, { source });
     if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.params.name });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -202,7 +215,8 @@ app.post('/api/projects/:name/import', (req, res) => {
 // ---- BULK UPDATE METADATA ----
 app.post('/api/projects/:name/bulk-metadata', (req, res) => {
   try {
-    const result = store.bulkUpdateMetadata(req.params.name, req.body.field, req.body.value, req.body.category);
+    const source = req.body.source || 'browser';
+    const result = store.bulkUpdateMetadata(req.params.name, req.body.field, req.body.value, req.body.category, { source });
     if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.params.name });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -211,7 +225,8 @@ app.post('/api/projects/:name/bulk-metadata', (req, res) => {
 // ---- MERGE PROJECTS ----
 app.post('/api/projects/:name/merge', (req, res) => {
   try {
-    const result = store.mergeProjects(req.params.name, req.body.target);
+    const source = req.body.source || 'browser';
+    const result = store.mergeProjects(req.params.name, req.body.target, { source });
     if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.body.target });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -221,6 +236,26 @@ app.post('/api/projects/:name/merge', (req, res) => {
 app.get('/api/projects/:name/categories/:catName/export', (req, res) => {
   try { res.json(store.exportCategory(req.params.name, req.params.catName)); }
   catch (e) { res.status(404).json({ error: e.message }); }
+});
+
+// ---- HISTORY API ----
+app.get('/api/projects/:name/history', (req, res) => {
+  try { res.json(store.getHistory(req.params.name)); }
+  catch (e) { res.status(404).json({ error: e.message }); }
+});
+
+app.get('/api/projects/:name/history/:commitId', (req, res) => {
+  try { res.json(store.getCommit(req.params.name, req.params.commitId)); }
+  catch (e) { res.status(404).json({ error: e.message }); }
+});
+
+app.post('/api/projects/:name/history/:commitId/rollback', (req, res) => {
+  try {
+    const source = req.body.source || 'browser';
+    const result = store.rollback(req.params.name, req.params.commitId, source);
+    if (req.body.session) broadcastToBrowsers(req.body.session, 'data:changed', { project: req.params.name });
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // ---- SPA FALLBACK ----
