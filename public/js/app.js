@@ -1,13 +1,12 @@
 /* =============================================
    Dataset Builder by Tryll Engine
-   Main Application
+   Main Application (API + WebSocket)
    ============================================= */
 
 // =============================================
 // CONFIG
 // =============================================
 const CONFIG = {
-  STORAGE_KEY: 'lootforge_data',
   ONBOARDING_KEY: 'dataset_builder_onboarding_done',
   DEFAULT_LICENSE: 'CC BY-NC-SA 3.0',
 };
@@ -25,29 +24,76 @@ const ONBOARDING_STEPS = [
 // =============================================
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
-const uid = () => crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+
+async function api(path, opts = {}) {
+  const res = await fetch('/api' + path, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'API error');
+  return data;
+}
 
 // =============================================
-// STORE — State management with localStorage
+// STORE — State management via REST API
 // =============================================
 class Store {
   constructor() {
-    this.data = this._load();
+    this.projectList = [];
+    this.currentProjectName = null;
+    this.currentProject = null;
     this._listeners = [];
+    this.sessionCode = null;
+    this._ws = null;
+    this._mcpConnected = false;
   }
 
-  _load() {
-    try {
-      const raw = localStorage.getItem(CONFIG.STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch (e) {
-      console.warn('Failed to load state:', e);
+  async init() {
+    const sess = await api('/session');
+    this.sessionCode = sess.code;
+    this._connectWS();
+    await this.refreshProjectList();
+  }
+
+  _connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    this._ws = new WebSocket(`${proto}//${location.host}/ws?session=${this.sessionCode}&type=browser`);
+
+    this._ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.event === 'mcp:connected') {
+          this._mcpConnected = true;
+          this._notify();
+        } else if (msg.event === 'mcp:disconnected') {
+          this._mcpConnected = false;
+          this._notify();
+        } else if (msg.event === 'data:changed') {
+          this._handleRemoteChange(msg.data);
+        }
+      } catch {}
+    };
+
+    this._ws.onclose = () => {
+      this._mcpConnected = false;
+      setTimeout(() => this._connectWS(), 3000);
+    };
+  }
+
+  async _handleRemoteChange(data) {
+    if (data && data.project) {
+      await this.refreshProjectList();
+      if (this.currentProjectName === data.project) {
+        await this._loadProject(data.project);
+      }
+    } else {
+      await this.refreshProjectList();
+      if (this.currentProjectName) {
+        try { await this._loadProject(this.currentProjectName); } catch {}
+      }
     }
-    return { projects: [], currentProjectId: null };
-  }
-
-  _save() {
-    localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(this.data));
     this._notify();
   }
 
@@ -61,168 +107,162 @@ class Store {
 
   // ---- PROJECTS ----
 
+  async refreshProjectList() {
+    this.projectList = await api('/projects');
+  }
+
   getProjects() {
-    return this.data.projects;
+    return this.projectList;
   }
 
   getCurrentProject() {
-    if (!this.data.currentProjectId) return null;
-    return this.data.projects.find(p => p.id === this.data.currentProjectId) || null;
+    return this.currentProject;
   }
 
-  createProject(name) {
-    const project = {
-      id: uid(),
-      name: name.trim(),
-      createdAt: new Date().toISOString(),
-      categories: [],
-    };
-    this.data.projects.push(project);
-    this.data.currentProjectId = project.id;
-    this._save();
-    return project;
-  }
-
-  selectProject(id) {
-    this.data.currentProjectId = id;
-    this._save();
-  }
-
-  deleteProject(id) {
-    this.data.projects = this.data.projects.filter(p => p.id !== id);
-    if (this.data.currentProjectId === id) {
-      this.data.currentProjectId = this.data.projects.length ? this.data.projects[0].id : null;
+  async selectProject(name) {
+    this.currentProjectName = name;
+    if (name) {
+      await this._loadProject(name);
+    } else {
+      this.currentProject = null;
     }
-    this._save();
+    this._notify();
+  }
+
+  async _loadProject(name) {
+    try {
+      this.currentProject = await api(`/projects/${encodeURIComponent(name)}`);
+      this.currentProjectName = name;
+    } catch {
+      this.currentProject = null;
+      this.currentProjectName = null;
+    }
+  }
+
+  async createProject(name) {
+    const result = await api('/projects', { method: 'POST', body: { name, session: this.sessionCode } });
+    await this.refreshProjectList();
+    this.currentProjectName = result.name;
+    this.currentProject = result;
+    this._notify();
+    return result;
+  }
+
+  async deleteProject(name) {
+    await api(`/projects/${encodeURIComponent(name)}?session=${this.sessionCode}`, { method: 'DELETE' });
+    await this.refreshProjectList();
+    if (this.currentProjectName === name) {
+      this.currentProjectName = this.projectList.length ? this.projectList[0].name : null;
+      if (this.currentProjectName) {
+        await this._loadProject(this.currentProjectName);
+      } else {
+        this.currentProject = null;
+      }
+    }
+    this._notify();
   }
 
   // ---- CATEGORIES ----
 
   getCategories() {
-    const project = this.getCurrentProject();
-    return project ? project.categories : [];
+    return this.currentProject ? this.currentProject.categories : [];
   }
 
-  addCategory(name) {
-    const project = this.getCurrentProject();
-    if (!project) return null;
-    const cat = {
-      id: uid(),
-      name: name.trim(),
-      expanded: true,
-      chunks: [],
-    };
-    project.categories.push(cat);
-    this._save();
-    return cat;
+  async addCategory(name) {
+    if (!this.currentProjectName) return null;
+    const result = await api(`/projects/${encodeURIComponent(this.currentProjectName)}/categories`, {
+      method: 'POST', body: { name, session: this.sessionCode },
+    });
+    await this._loadProject(this.currentProjectName);
+    this._notify();
+    return result;
   }
 
-  deleteCategory(catId) {
-    const project = this.getCurrentProject();
-    if (!project) return;
-    project.categories = project.categories.filter(c => c.id !== catId);
-    this._save();
+  async deleteCategory(catId) {
+    if (!this.currentProject) return;
+    const cat = this.currentProject.categories.find(c => c.id === catId);
+    if (!cat) return;
+    await api(`/projects/${encodeURIComponent(this.currentProjectName)}/categories/${encodeURIComponent(cat.name)}?session=${this.sessionCode}`, { method: 'DELETE' });
+    await this._loadProject(this.currentProjectName);
+    this._notify();
   }
 
-  renameCategory(catId, newName) {
-    const project = this.getCurrentProject();
-    if (!project) return;
-    const cat = project.categories.find(c => c.id === catId);
-    if (cat) {
-      cat.name = newName.trim();
-      this._save();
-    }
+  async renameCategory(catId, newName) {
+    if (!this.currentProject) return;
+    const cat = this.currentProject.categories.find(c => c.id === catId);
+    if (!cat) return;
+    await api(`/projects/${encodeURIComponent(this.currentProjectName)}/categories/${encodeURIComponent(cat.name)}`, {
+      method: 'PUT', body: { newName, session: this.sessionCode },
+    });
+    await this._loadProject(this.currentProjectName);
+    this._notify();
   }
 
-  toggleCategory(catId) {
-    const project = this.getCurrentProject();
-    if (!project) return;
-    const cat = project.categories.find(c => c.id === catId);
-    if (cat) {
-      cat.expanded = !cat.expanded;
-      this._save();
-    }
+  async toggleCategory(catId) {
+    if (!this.currentProject) return;
+    // Toggle locally for instant UI response
+    const cat = this.currentProject.categories.find(c => c.id === catId);
+    if (cat) cat.expanded = !cat.expanded;
+    this._notify();
+    // Sync to server (fire and forget)
+    api(`/projects/${encodeURIComponent(this.currentProjectName)}/categories/${catId}/toggle`, { method: 'POST' }).catch(() => {});
   }
 
   // ---- CHUNKS ----
 
-  addChunk(catId) {
-    const project = this.getCurrentProject();
-    if (!project) return null;
-    const cat = project.categories.find(c => c.id === catId);
-    if (!cat) return null;
-    const chunk = {
-      _uid: uid(),
-      id: '',
-      text: '',
-      metadata: {
-        page_title: '',
-        source: '',
-        license: CONFIG.DEFAULT_LICENSE,
-      },
-      customFields: [],
-    };
-    cat.chunks.push(chunk);
-    this._save();
-    return { categoryId: catId, chunkUid: chunk._uid };
+  async addChunk(catId) {
+    if (!this.currentProjectName) return null;
+    const result = await api(`/projects/${encodeURIComponent(this.currentProjectName)}/categories/${catId}/chunks/blank`, { method: 'POST' });
+    await this._loadProject(this.currentProjectName);
+    this._notify();
+    return { categoryId: catId, chunkUid: result._uid };
   }
 
   getChunk(catId, chunkUid) {
-    const project = this.getCurrentProject();
-    if (!project) return null;
-    const cat = project.categories.find(c => c.id === catId);
+    if (!this.currentProject) return null;
+    const cat = this.currentProject.categories.find(c => c.id === catId);
     if (!cat) return null;
     return cat.chunks.find(ch => ch._uid === chunkUid) || null;
   }
 
-  updateChunk(catId, chunkUid, data) {
-    const project = this.getCurrentProject();
-    if (!project) return;
-    const cat = project.categories.find(c => c.id === catId);
-    if (!cat) return;
-    const idx = cat.chunks.findIndex(ch => ch._uid === chunkUid);
-    if (idx === -1) return;
-    cat.chunks[idx] = { ...cat.chunks[idx], ...data };
-    this._save();
+  async updateChunk(catId, chunkUid, data) {
+    if (!this.currentProjectName) return;
+    // Update locally for instant feedback
+    const cat = this.currentProject?.categories.find(c => c.id === catId);
+    if (cat) {
+      const idx = cat.chunks.findIndex(ch => ch._uid === chunkUid);
+      if (idx !== -1) cat.chunks[idx] = { ...cat.chunks[idx], ...data };
+    }
+    await api(`/projects/${encodeURIComponent(this.currentProjectName)}/categories/${catId}/chunks/${chunkUid}`, {
+      method: 'PUT', body: { ...data, session: this.sessionCode },
+    });
   }
 
-  deleteChunk(catId, chunkUid) {
-    const project = this.getCurrentProject();
-    if (!project) return;
-    const cat = project.categories.find(c => c.id === catId);
-    if (!cat) return;
-    cat.chunks = cat.chunks.filter(ch => ch._uid !== chunkUid);
-    this._save();
+  async deleteChunk(catId, chunkUid) {
+    if (!this.currentProjectName) return;
+    await api(`/projects/${encodeURIComponent(this.currentProjectName)}/categories/${catId}/chunks/${chunkUid}?session=${this.sessionCode}`, { method: 'DELETE' });
+    await this._loadProject(this.currentProjectName);
+    this._notify();
   }
 
-  duplicateChunk(catId, chunkUid) {
-    const project = this.getCurrentProject();
-    if (!project) return null;
-    const cat = project.categories.find(c => c.id === catId);
-    if (!cat) return null;
-    const orig = cat.chunks.find(ch => ch._uid === chunkUid);
-    if (!orig) return null;
-    const copy = JSON.parse(JSON.stringify(orig));
-    copy._uid = uid();
-    copy.id = orig.id ? orig.id + '_copy' : '';
-    cat.chunks.push(copy);
-    this._save();
-    return { categoryId: catId, chunkUid: copy._uid };
+  async duplicateChunk(catId, chunkUid) {
+    if (!this.currentProjectName) return null;
+    const result = await api(`/projects/${encodeURIComponent(this.currentProjectName)}/categories/${catId}/chunks/${chunkUid}/duplicate`, { method: 'POST' });
+    await this._loadProject(this.currentProjectName);
+    this._notify();
+    return { categoryId: catId, chunkUid: result._uid };
   }
 
   // ---- COUNTS ----
 
   getTotalChunks() {
-    const project = this.getCurrentProject();
-    if (!project) return 0;
-    return project.categories.reduce((sum, cat) => sum + cat.chunks.length, 0);
+    if (!this.currentProject) return 0;
+    return this.currentProject.categories.reduce((sum, cat) => sum + cat.chunks.length, 0);
   }
 
   isChunkIdTaken(id, excludeUid) {
-    if (!id) return false;
-    const project = this.getCurrentProject();
-    if (!project) return false;
-    for (const cat of project.categories) {
+    if (!id || !this.currentProject) return false;
+    for (const cat of this.currentProject.categories) {
       for (const chunk of cat.chunks) {
         if (chunk._uid !== excludeUid && chunk.id === id) return true;
       }
@@ -232,80 +272,22 @@ class Store {
 
   // ---- IMPORT ----
 
-  importProject(name, jsonArray) {
-    const STANDARD_META = new Set(['page_title', 'source', 'license']);
-
-    const project = {
-      id: uid(),
-      name: name.trim(),
-      createdAt: new Date().toISOString(),
-      categories: [],
-    };
-
-    // Single category for all imported chunks
-    const category = {
-      id: uid(),
-      name: 'Imported',
-      expanded: true,
-      chunks: [],
-    };
-
-    for (const entry of jsonArray) {
-      const meta = entry.metadata || {};
-      const customFields = [];
-
-      // Separate standard from custom metadata
-      for (const [key, value] of Object.entries(meta)) {
-        if (!STANDARD_META.has(key)) {
-          customFields.push({ key, value: String(value ?? '') });
-        }
-      }
-
-      category.chunks.push({
-        _uid: uid(),
-        id: entry.id || '',
-        text: entry.text || '',
-        metadata: {
-          page_title: meta.page_title || '',
-          source: meta.source || '',
-          license: meta.license || '',
-        },
-        customFields,
-      });
-    }
-
-    project.categories.push(category);
-    this.data.projects.push(project);
-    this.data.currentProjectId = project.id;
-    this._save();
-    return project;
+  async importProject(name, jsonArray) {
+    const result = await api(`/projects/${encodeURIComponent(name)}/import`, {
+      method: 'POST', body: { data: jsonArray, session: this.sessionCode },
+    });
+    await this.refreshProjectList();
+    this.currentProjectName = name;
+    await this._loadProject(name);
+    this._notify();
+    return result;
   }
 
   // ---- EXPORT ----
 
-  exportJSON() {
-    const project = this.getCurrentProject();
-    if (!project) return null;
-    const result = [];
-    for (const cat of project.categories) {
-      for (const chunk of cat.chunks) {
-        const entry = {
-          id: chunk.id,
-          text: chunk.text,
-          metadata: { ...chunk.metadata },
-        };
-        // merge custom fields into metadata
-        if (chunk.customFields) {
-          for (const cf of chunk.customFields) {
-            if (cf.key && cf.key.trim()) {
-              entry.metadata[cf.key.trim()] = cf.value || '';
-            }
-          }
-        }
-        result.push(entry);
-      }
-    }
-    return result;
+  async exportJSON() {
+    if (!this.currentProjectName) return null;
+    return await api(`/projects/${encodeURIComponent(this.currentProjectName)}/export`);
   }
 }
 
@@ -315,16 +297,18 @@ class Store {
 class App {
   constructor() {
     this.store = new Store();
-    this.selected = null; // { categoryId, chunkUid }
+    this.selected = null;
     this._onboardingStep = null;
-    this._init();
+    this._boot();
   }
 
-  _init() {
+  async _boot() {
     this._cacheEls();
     this._bindEvents();
+    await this.store.init();
     this.store.onChange(() => this.render());
     this.render();
+    this._renderSessionCode();
     this._initOnboarding();
   }
 
@@ -351,27 +335,22 @@ class App {
       chunkSearchWrap: $('#chunkSearchWrap'),
       chunkSearchInput: $('#chunkSearchInput'),
       clearSearchBtn: $('#clearSearchBtn'),
+      sessionCode: $('#sessionCode'),
+      mcpStatus: $('#mcpStatus'),
     };
   }
 
   _bindEvents() {
-    // Project select
-    this.els.projectSelect.addEventListener('change', (e) => {
+    this.els.projectSelect.addEventListener('change', async (e) => {
       this.selected = null;
-      this.store.selectProject(e.target.value);
+      await this.store.selectProject(e.target.value);
     });
 
-    // New project
     this.els.newProjectBtn.addEventListener('click', () => this._showNewProjectModal());
-
-    // Import project
     this.els.importProjectBtn.addEventListener('click', () => this.els.importFileInput.click());
     this.els.importFileInput.addEventListener('change', (e) => this._handleImport(e));
-
-    // Delete project
     this.els.deleteProjectBtn.addEventListener('click', () => this._handleDeleteProject());
 
-    // Categories
     this.els.addCategoryBtn.addEventListener('click', () => this._showCategoryInput());
     this.els.confirmCategoryBtn.addEventListener('click', () => this._confirmCategory());
     this.els.cancelCategoryBtn.addEventListener('click', () => this._hideCategoryInput());
@@ -380,10 +359,8 @@ class App {
       if (e.key === 'Escape') this._hideCategoryInput();
     });
 
-    // Category tree — delegated events
     this.els.categoryTree.addEventListener('click', (e) => this._handleTreeClick(e));
 
-    // Chunk search
     this.els.searchChunkBtn.addEventListener('click', () => this._toggleSearch());
     this.els.chunkSearchInput.addEventListener('input', () => this._filterChunks());
     this.els.clearSearchBtn.addEventListener('click', () => this._clearSearch());
@@ -391,15 +368,12 @@ class App {
       if (e.key === 'Escape') this._clearSearch();
     });
 
-    // Export
     this.els.exportBtn.addEventListener('click', () => this._handleExport());
 
-    // Modal overlay click to close
     this.els.modalOverlay.addEventListener('click', (e) => {
       if (e.target === this.els.modalOverlay) this._closeModal();
     });
 
-    // ESC to close modal
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this._closeModal();
     });
@@ -412,22 +386,35 @@ class App {
     this._renderCategories();
     this._renderContent();
     this._renderChunkCount();
-    // Re-show onboarding if waiting for a dynamic target
+    this._renderMcpStatus();
     if (this._onboardingStep !== null) {
       setTimeout(() => this._showOnboardingStep(), 50);
     }
   }
 
+  _renderSessionCode() {
+    if (this.els.sessionCode) {
+      this.els.sessionCode.textContent = this.store.sessionCode || '...';
+    }
+  }
+
+  _renderMcpStatus() {
+    if (this.els.mcpStatus) {
+      this.els.mcpStatus.classList.toggle('connected', this.store._mcpConnected);
+      this.els.mcpStatus.title = this.store._mcpConnected ? 'MCP Connected' : 'MCP Not Connected';
+    }
+  }
+
   _renderProjectSelect() {
     const projects = this.store.getProjects();
-    const currentId = this.store.data.currentProjectId;
+    const currentName = this.store.currentProjectName;
     let html = '<option value="" disabled>— Select Project —</option>';
     for (const p of projects) {
-      const sel = p.id === currentId ? 'selected' : '';
-      html += `<option value="${p.id}" ${sel}>${this._esc(p.name)}</option>`;
+      const sel = p.name === currentName ? 'selected' : '';
+      html += `<option value="${this._escAttr(p.name)}" ${sel}>${this._esc(p.name)}</option>`;
     }
     this.els.projectSelect.innerHTML = html;
-    if (!currentId && projects.length === 0) {
+    if (!currentName && projects.length === 0) {
       this.els.projectSelect.value = '';
     }
   }
@@ -487,7 +474,6 @@ class App {
     }
     this.els.categoryTree.innerHTML = html;
 
-    // set max-height for expanded lists to animate
     for (const cat of cats) {
       const el = $(`#chunks-${cat.id}`);
       if (el && cat.expanded) {
@@ -499,7 +485,6 @@ class App {
   _renderContent() {
     const project = this.store.getCurrentProject();
 
-    // No project
     if (!project) {
       this.els.content.innerHTML = `
         <div class="welcome-screen">
@@ -525,7 +510,6 @@ class App {
       return;
     }
 
-    // No selection
     if (!this.selected) {
       this.els.content.innerHTML = `
         <div class="empty-state">
@@ -538,7 +522,6 @@ class App {
       return;
     }
 
-    // Chunk editor
     const chunk = this.store.getChunk(this.selected.categoryId, this.selected.chunkUid);
     if (!chunk) {
       this.selected = null;
@@ -571,7 +554,6 @@ class App {
           </div>
         </div>
 
-        <!-- Core fields -->
         <div class="editor-card">
           <div class="editor-card-title"><i class="bi bi-tag"></i> Core Data</div>
           <div class="field-group">
@@ -586,7 +568,6 @@ class App {
           </div>
         </div>
 
-        <!-- Metadata -->
         <div class="editor-card">
           <div class="editor-card-title"><i class="bi bi-database"></i> Metadata</div>
           <div class="field-group">
@@ -603,7 +584,6 @@ class App {
           </div>
         </div>
 
-        <!-- Custom fields -->
         <div class="editor-card">
           <div class="editor-card-title"><i class="bi bi-sliders"></i> Custom Fields</div>
           <div id="customFieldsContainer">
@@ -614,7 +594,6 @@ class App {
           </button>
         </div>
 
-        <!-- Save bar -->
         <div class="editor-save-bar">
           <button class="btn btn-accent btn-block" id="saveChunkBtn">
             <i class="bi bi-check-lg"></i> Save Chunk
@@ -622,7 +601,6 @@ class App {
         </div>
       </div>`;
 
-    // Bind editor events
     this._bindEditorEvents();
   }
 
@@ -644,7 +622,6 @@ class App {
     if (duplicateBtn) duplicateBtn.addEventListener('click', () => this._duplicateCurrentChunk());
     if (addCfBtn) addCfBtn.addEventListener('click', () => this._addCustomField());
 
-    // Character counter for text field
     const chunkText = $('#chunkText');
     const charCount = $('#charCount');
     const charCounter = $('#charCounter');
@@ -657,7 +634,6 @@ class App {
       });
     }
 
-    // Remove custom field (delegated)
     if (cfContainer) {
       cfContainer.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-action="remove-cf"]');
@@ -668,7 +644,6 @@ class App {
       });
     }
 
-    // Ctrl+S to save
     const handler = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
@@ -732,17 +707,18 @@ class App {
 
     setTimeout(() => input.focus(), 100);
 
-    const create = () => {
+    const create = async () => {
       const name = input.value.trim();
-      if (!name) {
-        input.style.borderColor = 'var(--danger)';
-        return;
+      if (!name) { input.style.borderColor = 'var(--danger)'; return; }
+      try {
+        this.selected = null;
+        await this.store.createProject(name);
+        this._closeModal();
+        this._toast('Project created!', 'success');
+        this._advanceOnboarding(0);
+      } catch (err) {
+        this._toast(err.message, 'error');
       }
-      this.selected = null;
-      this.store.createProject(name);
-      this._closeModal();
-      this._toast('Project created!', 'success');
-      this._advanceOnboarding(0);
     };
 
     confirm.addEventListener('click', create);
@@ -756,31 +732,22 @@ class App {
   _handleImport(e) {
     const file = e.target.files[0];
     if (!file) return;
-    // Reset input so same file can be re-imported
     e.target.value = '';
 
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const parsed = JSON.parse(ev.target.result);
-
-        // Validate: must be an array of objects with at least `id`
-        if (!Array.isArray(parsed)) {
-          this._toast('Invalid format: expected a JSON array.', 'error');
-          return;
-        }
-        if (parsed.length === 0) {
-          this._toast('JSON array is empty — nothing to import.', 'error');
-          return;
-        }
+        if (!Array.isArray(parsed)) { this._toast('Invalid format: expected a JSON array.', 'error'); return; }
+        if (parsed.length === 0) { this._toast('JSON array is empty.', 'error'); return; }
 
         const projectName = file.name.replace(/\.json$/i, '');
-        const project = this.store.importProject(projectName, parsed);
+        await this.store.importProject(projectName, parsed);
         this.selected = null;
         this.render();
-        this._toast(`Imported! ${parsed.length} chunks loaded into "${project.name}".`, 'success');
+        this._toast(`Imported! ${parsed.length} chunks loaded.`, 'success');
       } catch (err) {
-        this._toast('Failed to parse JSON: ' + err.message, 'error');
+        this._toast('Failed: ' + err.message, 'error');
       }
     };
     reader.readAsText(file);
@@ -792,16 +759,16 @@ class App {
 
     this.els.modalContent.innerHTML = `
       <div class="modal-title"><i class="bi bi-exclamation-triangle" style="color:var(--danger)"></i> Delete Project</div>
-      <p class="modal-text">Are you sure you want to delete <strong>${this._esc(project.name)}</strong>? This will remove all categories and chunks. This action cannot be undone.</p>
+      <p class="modal-text">Are you sure you want to delete <strong>${this._esc(project.name)}</strong>? This cannot be undone.</p>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="modalCancel">Cancel</button>
         <button class="btn btn-danger" id="modalConfirm"><i class="bi bi-trash3"></i> Delete</button>
       </div>`;
     this.els.modalOverlay.classList.remove('hidden');
 
-    $('#modalConfirm').addEventListener('click', () => {
+    $('#modalConfirm').addEventListener('click', async () => {
       this.selected = null;
-      this.store.deleteProject(project.id);
+      await this.store.deleteProject(project.name);
       this._closeModal();
       this._toast('Project deleted.', 'info');
     });
@@ -811,10 +778,7 @@ class App {
   // ---- CATEGORY ACTIONS ----
 
   _showCategoryInput() {
-    if (!this.store.getCurrentProject()) {
-      this._toast('Create a project first!', 'error');
-      return;
-    }
+    if (!this.store.getCurrentProject()) { this._toast('Create a project first!', 'error'); return; }
     this.els.newCategoryWrap.classList.remove('hidden');
     this.els.newCategoryName.value = '';
     this.els.newCategoryName.focus();
@@ -825,13 +789,17 @@ class App {
     this.els.newCategoryName.value = '';
   }
 
-  _confirmCategory() {
+  async _confirmCategory() {
     const name = this.els.newCategoryName.value.trim();
     if (!name) return;
-    this.store.addCategory(name);
-    this._hideCategoryInput();
-    this._toast(`Category "${name}" created!`, 'success');
-    this._advanceOnboarding(1);
+    try {
+      await this.store.addCategory(name);
+      this._hideCategoryInput();
+      this._toast(`Category "${name}" created!`, 'success');
+      this._advanceOnboarding(1);
+    } catch (err) {
+      this._toast(err.message, 'error');
+    }
   }
 
   _handleDeleteCategory(catId) {
@@ -849,17 +817,19 @@ class App {
         </div>`;
       this.els.modalOverlay.classList.remove('hidden');
 
-      $('#modalConfirm').addEventListener('click', () => {
+      $('#modalConfirm').addEventListener('click', async () => {
         if (this.selected && this.selected.categoryId === catId) this.selected = null;
-        this.store.deleteCategory(catId);
+        await this.store.deleteCategory(catId);
         this._closeModal();
         this._toast('Category deleted.', 'info');
       });
       $('#modalCancel').addEventListener('click', () => this._closeModal());
     } else {
-      if (this.selected && this.selected.categoryId === catId) this.selected = null;
-      this.store.deleteCategory(catId);
-      this._toast('Category deleted.', 'info');
+      (async () => {
+        if (this.selected && this.selected.categoryId === catId) this.selected = null;
+        await this.store.deleteCategory(catId);
+        this._toast('Category deleted.', 'info');
+      })();
     }
   }
 
@@ -867,8 +837,7 @@ class App {
 
   _toggleSearch() {
     const wrap = this.els.chunkSearchWrap;
-    const isHidden = wrap.classList.contains('hidden');
-    if (isHidden) {
+    if (wrap.classList.contains('hidden')) {
       wrap.classList.remove('hidden');
       this.els.chunkSearchInput.focus();
     } else {
@@ -879,7 +848,6 @@ class App {
   _clearSearch() {
     this.els.chunkSearchInput.value = '';
     this.els.chunkSearchWrap.classList.add('hidden');
-    // Show all chunks
     this.els.categoryTree.querySelectorAll('.chunk-item').forEach(el => el.style.display = '');
     this.els.categoryTree.querySelectorAll('.category-item').forEach(el => el.style.display = '');
   }
@@ -891,18 +859,13 @@ class App {
     cats.forEach(catEl => {
       const chunks = catEl.querySelectorAll('.chunk-item');
       let visibleCount = 0;
-
       chunks.forEach(chunkEl => {
         const name = chunkEl.querySelector('.chunk-item-name')?.textContent.toLowerCase() || '';
         const match = !query || name.includes(query);
         chunkEl.style.display = match ? '' : 'none';
         if (match) visibleCount++;
       });
-
-      // Hide category if no chunks match (but always show if query is empty)
       catEl.style.display = (!query || visibleCount > 0) ? '' : 'none';
-
-      // Auto-expand categories with matches
       if (query && visibleCount > 0) {
         const chunkList = catEl.querySelector('.chunk-list');
         if (chunkList && chunkList.classList.contains('collapsed')) {
@@ -915,25 +878,19 @@ class App {
 
   // ---- CHUNK ACTIONS ----
 
-  _handleAddChunk(catId) {
-    const result = this.store.addChunk(catId);
+  async _handleAddChunk(catId) {
+    const result = await this.store.addChunk(catId);
     if (!result) return;
-    // Ensure category is expanded
     const cat = this.store.getCategories().find(c => c.id === catId);
-    if (cat && !cat.expanded) this.store.toggleCategory(catId);
-    // Select the new chunk
+    if (cat && !cat.expanded) await this.store.toggleCategory(catId);
     this.selected = result;
     this.render();
-    // Focus ID field
-    setTimeout(() => {
-      const idInput = $('#chunkId');
-      if (idInput) idInput.focus();
-    }, 50);
+    setTimeout(() => { const idInput = $('#chunkId'); if (idInput) idInput.focus(); }, 50);
     this._toast('New chunk created. Fill it in!', 'success');
     this._advanceOnboarding(2);
   }
 
-  _saveCurrentChunk() {
+  async _saveCurrentChunk() {
     if (!this.selected) return;
 
     const idVal = ($('#chunkId') || {}).value || '';
@@ -942,7 +899,6 @@ class App {
     const source = ($('#metaSource') || {}).value || '';
     const license = ($('#metaLicense') || {}).value || '';
 
-    // Check for duplicate ID
     if (idVal && this.store.isChunkIdTaken(idVal, this.selected.chunkUid)) {
       this._toast('This ID already exists. Try adding _1, _2, etc.', 'error');
       const idInput = $('#chunkId');
@@ -950,26 +906,27 @@ class App {
       return;
     }
 
-    // Gather custom fields
     const customFields = [];
-    const cfRows = $$('.custom-field-row');
-    cfRows.forEach(row => {
+    $$('.custom-field-row').forEach(row => {
       const keyInput = row.querySelector('[data-cf-part="key"]');
       const valueInput = row.querySelector('[data-cf-part="value"]');
-      if (keyInput && valueInput) {
-        customFields.push({ key: keyInput.value, value: valueInput.value });
-      }
+      if (keyInput && valueInput) customFields.push({ key: keyInput.value, value: valueInput.value });
     });
 
-    this.store.updateChunk(this.selected.categoryId, this.selected.chunkUid, {
-      id: idVal,
-      text: textVal,
-      metadata: { page_title: pageTitle, source, license },
-      customFields,
-    });
-
-    this._toast('Chunk saved!', 'success');
-    this._advanceOnboarding(3);
+    try {
+      await this.store.updateChunk(this.selected.categoryId, this.selected.chunkUid, {
+        id: idVal, text: textVal,
+        metadata: { page_title: pageTitle, source, license },
+        customFields,
+      });
+      this._toast('Chunk saved!', 'success');
+      this._advanceOnboarding(3);
+      // Re-render sidebar to update chunk name
+      this._renderCategories();
+      this._renderChunkCount();
+    } catch (err) {
+      this._toast('Save failed: ' + err.message, 'error');
+    }
   }
 
   _deleteCurrentChunk() {
@@ -986,8 +943,8 @@ class App {
       </div>`;
     this.els.modalOverlay.classList.remove('hidden');
 
-    $('#modalConfirm').addEventListener('click', () => {
-      this.store.deleteChunk(this.selected.categoryId, this.selected.chunkUid);
+    $('#modalConfirm').addEventListener('click', async () => {
+      await this.store.deleteChunk(this.selected.categoryId, this.selected.chunkUid);
       this.selected = null;
       this._closeModal();
       this._toast('Chunk deleted.', 'info');
@@ -1008,18 +965,18 @@ class App {
       </div>`;
     this.els.modalOverlay.classList.remove('hidden');
 
-    $('#modalConfirm').addEventListener('click', () => {
+    $('#modalConfirm').addEventListener('click', async () => {
       if (this.selected && this.selected.chunkUid === chunkUid) this.selected = null;
-      this.store.deleteChunk(catId, chunkUid);
+      await this.store.deleteChunk(catId, chunkUid);
       this._closeModal();
       this._toast('Chunk deleted.', 'info');
     });
     $('#modalCancel').addEventListener('click', () => this._closeModal());
   }
 
-  _duplicateCurrentChunk() {
+  async _duplicateCurrentChunk() {
     if (!this.selected) return;
-    const result = this.store.duplicateChunk(this.selected.categoryId, this.selected.chunkUid);
+    const result = await this.store.duplicateChunk(this.selected.categoryId, this.selected.chunkUid);
     if (result) {
       this.selected = result;
       this.render();
@@ -1027,34 +984,37 @@ class App {
     }
   }
 
-  _addCustomField() {
+  async _addCustomField() {
     if (!this.selected) return;
-    // Save current state first to not lose data
-    this._saveCurrentChunkSilent();
+    await this._saveCurrentChunkSilent();
     const chunk = this.store.getChunk(this.selected.categoryId, this.selected.chunkUid);
     if (!chunk) return;
     if (!chunk.customFields) chunk.customFields = [];
     chunk.customFields.push({ key: '', value: '' });
-    this.store._save();
+    // Save updated custom fields to server
+    await this.store.updateChunk(this.selected.categoryId, this.selected.chunkUid, {
+      id: chunk.id, text: chunk.text, metadata: chunk.metadata, customFields: chunk.customFields,
+    });
     this._renderContent();
-    // Focus the new key input
     setTimeout(() => {
       const inputs = $$('.custom-field-key');
       if (inputs.length) inputs[inputs.length - 1].focus();
     }, 50);
   }
 
-  _removeCustomField(index) {
+  async _removeCustomField(index) {
     if (!this.selected) return;
-    this._saveCurrentChunkSilent();
+    await this._saveCurrentChunkSilent();
     const chunk = this.store.getChunk(this.selected.categoryId, this.selected.chunkUid);
     if (!chunk || !chunk.customFields) return;
     chunk.customFields.splice(index, 1);
-    this.store._save();
+    await this.store.updateChunk(this.selected.categoryId, this.selected.chunkUid, {
+      id: chunk.id, text: chunk.text, metadata: chunk.metadata, customFields: chunk.customFields,
+    });
     this._renderContent();
   }
 
-  _saveCurrentChunkSilent() {
+  async _saveCurrentChunkSilent() {
     if (!this.selected) return;
     const idVal = ($('#chunkId') || {}).value || '';
     const textVal = ($('#chunkText') || {}).value || '';
@@ -1065,11 +1025,9 @@ class App {
     $$('.custom-field-row').forEach(row => {
       const keyInput = row.querySelector('[data-cf-part="key"]');
       const valueInput = row.querySelector('[data-cf-part="value"]');
-      if (keyInput && valueInput) {
-        customFields.push({ key: keyInput.value, value: valueInput.value });
-      }
+      if (keyInput && valueInput) customFields.push({ key: keyInput.value, value: valueInput.value });
     });
-    this.store.updateChunk(this.selected.categoryId, this.selected.chunkUid, {
+    await this.store.updateChunk(this.selected.categoryId, this.selected.chunkUid, {
       id: idVal, text: textVal,
       metadata: { page_title: pageTitle, source, license },
       customFields,
@@ -1078,34 +1036,31 @@ class App {
 
   // ---- EXPORT ----
 
-  _handleExport() {
+  async _handleExport() {
     const project = this.store.getCurrentProject();
-    if (!project) {
-      this._toast('No project selected!', 'error');
-      return;
+    if (!project) { this._toast('No project selected!', 'error'); return; }
+
+    await this._saveCurrentChunkSilent();
+
+    try {
+      const data = await this.store.exportJSON();
+      if (!data || data.length === 0) { this._toast('No chunks to export.', 'error'); return; }
+
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${project.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      this._toast(`Forged! ${data.length} chunks exported.`, 'success');
+      this._advanceOnboarding(4);
+    } catch (err) {
+      this._toast('Export failed: ' + err.message, 'error');
     }
-
-    // Save any open chunk first
-    this._saveCurrentChunkSilent();
-
-    const data = this.store.exportJSON();
-    if (!data || data.length === 0) {
-      this._toast('No chunks to export. Add some data first!', 'error');
-      return;
-    }
-
-    const json = JSON.stringify(data, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${project.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    this._toast(`Forged! ${data.length} chunks exported.`, 'success');
-    this._advanceOnboarding(4);
   }
 
   // ---- MODAL ----
@@ -1124,8 +1079,9 @@ class App {
       ['Can I use duplicate chunk names?', 'No — each chunk ID must be unique within a project. If you need a similar name, add a suffix like <strong>_1</strong>, <strong>_2</strong>, etc.'],
       ['What\'s the text character limit?', 'Each chunk supports up to <strong>2000 characters</strong>. The counter below the text field shows how many you\'ve used.'],
       ['How do I export my dataset?', 'Click the <strong>Forge JSON</strong> button in the top-right corner. Your browser will download a .json file with all project data.'],
-      ['How do I import an existing dataset?', 'Click the <strong>upload</strong> button (↑) in the top bar and select a .json file exported from Dataset Builder.'],
-      ['Where is my data stored?', 'Everything is saved in your browser\'s <strong>localStorage</strong>. Nothing is sent to a server. Clearing browser data will erase your projects — export regularly!'],
+      ['How do I import an existing dataset?', 'Click the <strong>upload</strong> button in the top bar and select a .json file exported from Dataset Builder.'],
+      ['What is the Session Code?', 'The session code lets you connect <strong>Claude Code (MCP)</strong> to this web app. Share the code with Claude and it can create projects, categories and chunks that appear here in real-time.'],
+      ['Where is my data stored?', 'Data is stored as <strong>JSON files on the server</strong>. You can export anytime to back up your work.'],
     ];
 
     const faqItems = faqData.map(([q, a]) => `
@@ -1143,7 +1099,6 @@ class App {
     this.els.modalContent.classList.add('modal--faq');
     this.els.modalOverlay.classList.remove('hidden');
 
-    // Accordion toggle
     this.els.modalContent.querySelectorAll('.faq-question').forEach(q => {
       q.addEventListener('click', () => q.parentElement.classList.toggle('open'));
     });
@@ -1171,7 +1126,6 @@ class App {
   // ---- ONBOARDING ----
 
   _initOnboarding() {
-    // Cache onboarding elements
     this._obTip = $('#onboardingTip');
     this._obText = $('#onboardingText');
     this._obBadge = $('#onboardingBadge');
@@ -1184,13 +1138,11 @@ class App {
       this._startOnboarding();
     });
 
-    // FAQ button
     $('#openFAQBtn').addEventListener('click', (e) => {
       e.preventDefault();
       this._showFAQModal();
     });
 
-    // Start onboarding if first visit
     if (!localStorage.getItem(CONFIG.ONBOARDING_KEY)) {
       setTimeout(() => this._startOnboarding(), 500);
     }
@@ -1206,7 +1158,6 @@ class App {
     this._onboardingStep = null;
     localStorage.setItem(CONFIG.ONBOARDING_KEY, '1');
     this._obTip.classList.add('hidden');
-    // Remove pulse from any element
     document.querySelectorAll('.onboarding-pulse').forEach(el => el.classList.remove('onboarding-pulse'));
   }
 
@@ -1217,7 +1168,6 @@ class App {
       this._endOnboarding();
       return;
     }
-    // Small delay so the UI updates first
     setTimeout(() => this._showOnboardingStep(), 300);
   }
 
@@ -1226,52 +1176,31 @@ class App {
     const step = ONBOARDING_STEPS[this._onboardingStep];
     if (!step) { this._endOnboarding(); return; }
 
-    // Remove old pulse
     document.querySelectorAll('.onboarding-pulse').forEach(el => el.classList.remove('onboarding-pulse'));
 
-    // Find target element
     const targetSel = step.target || step.dynamicTarget;
     const targetEl = targetSel ? document.querySelector(targetSel) : null;
 
     if (!targetEl) {
-      // Target not yet in DOM, wait and retry
       this._obTip.classList.add('hidden');
       return;
     }
 
-    // Set content
     this._obBadge.textContent = this._onboardingStep + 1;
     this._obText.innerHTML = step.text;
-
-    // Add pulse to target
     targetEl.classList.add('onboarding-pulse');
-
-    // Position tooltip
     this._obTip.classList.remove('hidden');
     const tipRect = this._obTip.getBoundingClientRect();
     const elRect = targetEl.getBoundingClientRect();
 
     let top, left;
     switch (step.position) {
-      case 'bottom':
-        top = elRect.bottom + 10;
-        left = elRect.left + elRect.width / 2 - tipRect.width / 2;
-        break;
-      case 'top':
-        top = elRect.top - tipRect.height - 10;
-        left = elRect.left + elRect.width / 2 - tipRect.width / 2;
-        break;
-      case 'right':
-        top = elRect.top + elRect.height / 2 - tipRect.height / 2;
-        left = elRect.right + 10;
-        break;
-      case 'left':
-        top = elRect.top + elRect.height / 2 - tipRect.height / 2;
-        left = elRect.left - tipRect.width - 10;
-        break;
+      case 'bottom': top = elRect.bottom + 10; left = elRect.left + elRect.width / 2 - tipRect.width / 2; break;
+      case 'top': top = elRect.top - tipRect.height - 10; left = elRect.left + elRect.width / 2 - tipRect.width / 2; break;
+      case 'right': top = elRect.top + elRect.height / 2 - tipRect.height / 2; left = elRect.right + 10; break;
+      case 'left': top = elRect.top + elRect.height / 2 - tipRect.height / 2; left = elRect.left - tipRect.width - 10; break;
     }
 
-    // Keep within viewport
     left = Math.max(8, Math.min(left, window.innerWidth - tipRect.width - 8));
     top = Math.max(8, Math.min(top, window.innerHeight - tipRect.height - 8));
 

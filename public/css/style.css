@@ -194,6 +194,49 @@ body {
   flex-shrink: 0;
 }
 
+/* Session badge */
+.session-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  padding: 4px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  letter-spacing: 1.5px;
+  font-family: 'Courier New', monospace;
+  user-select: all;
+}
+
+.session-badge i {
+  color: var(--accent);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.mcp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+  transition: background 300ms ease;
+}
+
+.mcp-dot.connected {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success), 0 0 12px rgba(56, 161, 105, 0.3);
+  animation: mcpPulse 2s ease-in-out infinite;
+}
+
+@keyframes mcpPulse {
+  0%, 100% { box-shadow: 0 0 6px var(--success), 0 0 12px rgba(56, 161, 105, 0.3); }
+  50%      { box-shadow: 0 0 8px var(--success), 0 0 20px rgba(56, 161, 105, 0.5); }
+}
+
 .chunk-counter {
   display: flex;
   align-items: center;
