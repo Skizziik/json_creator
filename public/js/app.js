@@ -1112,6 +1112,46 @@ class App {
 
   _closeModal() {
     this.els.modalOverlay.classList.add('hidden');
+    this.els.modalContent.classList.remove('modal--faq');
+  }
+
+  _showFAQModal() {
+    const faqData = [
+      ['What is Dataset Builder?', 'A tool for creating structured JSON datasets for RAG (Retrieval-Augmented Generation) systems. You organize knowledge into projects, categories and chunks, then export it as JSON.'],
+      ['How do I create a project?', 'Click the <strong>+</strong> button in the top bar. Give your project a name — it will also be used as the filename on export.'],
+      ['What are categories?', 'Categories are folders that help you organize chunks by topic. Click <strong>+ New Category</strong> in the sidebar to create one.'],
+      ['What is a chunk?', 'A chunk is a single piece of knowledge with a unique <strong>ID</strong> and <strong>text</strong> content. It\'s the building block of your dataset.'],
+      ['Can I use duplicate chunk names?', 'No — each chunk ID must be unique within a project. If you need a similar name, add a suffix like <strong>_1</strong>, <strong>_2</strong>, etc.'],
+      ['What\'s the text character limit?', 'Each chunk supports up to <strong>2000 characters</strong>. The counter below the text field shows how many you\'ve used.'],
+      ['How do I export my dataset?', 'Click the <strong>Forge JSON</strong> button in the top-right corner. Your browser will download a .json file with all project data.'],
+      ['How do I import an existing dataset?', 'Click the <strong>upload</strong> button (↑) in the top bar and select a .json file exported from Dataset Builder.'],
+      ['Where is my data stored?', 'Everything is saved in your browser\'s <strong>localStorage</strong>. Nothing is sent to a server. Clearing browser data will erase your projects — export regularly!'],
+    ];
+
+    const faqItems = faqData.map(([q, a]) => `
+      <div class="faq-item">
+        <div class="faq-question"><span>${q}</span> <i class="bi bi-chevron-down"></i></div>
+        <div class="faq-answer">${a}</div>
+      </div>`).join('');
+
+    this.els.modalContent.innerHTML = `
+      <div class="modal-title"><i class="bi bi-chat-dots"></i> FAQ</div>
+      <div class="faq-list">${faqItems}</div>
+      <div class="modal-actions">
+        <button class="btn btn-accent" id="modalClose">Close</button>
+      </div>`;
+    this.els.modalContent.classList.add('modal--faq');
+    this.els.modalOverlay.classList.remove('hidden');
+
+    // Accordion toggle
+    this.els.modalContent.querySelectorAll('.faq-question').forEach(q => {
+      q.addEventListener('click', () => q.parentElement.classList.toggle('open'));
+    });
+
+    $('#modalClose').addEventListener('click', () => {
+      this.els.modalContent.classList.remove('modal--faq');
+      this._closeModal();
+    });
   }
 
   // ---- TOAST ----
@@ -1142,6 +1182,12 @@ class App {
     this._obRestart.addEventListener('click', (e) => {
       e.preventDefault();
       this._startOnboarding();
+    });
+
+    // FAQ button
+    $('#openFAQBtn').addEventListener('click', (e) => {
+      e.preventDefault();
+      this._showFAQModal();
     });
 
     // Start onboarding if first visit
