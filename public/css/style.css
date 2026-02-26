@@ -1072,8 +1072,8 @@ body {
 .welcome-logo-img {
   width: 96px;
   height: 96px;
-  border-radius: var(--radius-lg);
-  object-fit: contain;
+  border-radius: 18px;
+  object-fit: cover;
   filter: drop-shadow(0 0 30px var(--accent-glow));
 }
 
