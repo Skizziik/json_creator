@@ -28,7 +28,7 @@
 
   /* Typography */
   --font-body: 'Inter', system-ui, sans-serif;
-  --font-heading: 'Rajdhani', 'Inter', sans-serif;
+  --font-heading: 'Inter', system-ui, sans-serif;
 
   /* Spacing & sizing */
   --radius-sm: 4px;
@@ -106,6 +106,13 @@ body {
   font-size: 22px;
   color: var(--accent);
   filter: drop-shadow(0 0 6px var(--accent-glow));
+}
+
+.brand-logo {
+  height: 30px;
+  width: 30px;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
 }
 
 .brand-text {
@@ -994,10 +1001,21 @@ body {
 }
 
 .welcome-logo {
+  animation: float 3s ease-in-out infinite;
+}
+
+.welcome-logo i {
   font-size: 72px;
   color: var(--accent);
   filter: drop-shadow(0 0 30px var(--accent-glow));
-  animation: float 3s ease-in-out infinite;
+}
+
+.welcome-logo-img {
+  width: 96px;
+  height: 96px;
+  border-radius: var(--radius-lg);
+  object-fit: contain;
+  filter: drop-shadow(0 0 30px var(--accent-glow));
 }
 
 @keyframes float {

@@ -464,7 +464,7 @@ class App {
     if (!project) {
       this.els.content.innerHTML = `
         <div class="welcome-screen">
-          <div class="welcome-logo"><i class="bi bi-database-fill-gear"></i></div>
+          <div class="welcome-logo"><img src="/img/logo.png" alt="Tryll Engine" class="welcome-logo-img"></div>
           <div class="welcome-title">RAG <span class="accent">Constructor</span></div>
           <p class="welcome-desc">
             by Tryll Engine<br><br>
