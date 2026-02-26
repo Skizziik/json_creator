@@ -72,6 +72,10 @@ class Store {
           this._notify();
         } else if (msg.event === 'data:changed') {
           this._handleRemoteChange(msg.data);
+        } else if (msg.event === 'project:created') {
+          this._handleRemoteProjectCreated(msg.data);
+        } else if (msg.event === 'project:deleted') {
+          this._handleRemoteProjectDeleted(msg.data);
         }
       } catch {}
     };
@@ -85,13 +89,38 @@ class Store {
   async _handleRemoteChange(data) {
     if (data && data.project) {
       await this.refreshProjectList();
-      if (this.currentProjectName === data.project) {
+      // Auto-select the project if none is selected
+      if (!this.currentProjectName) {
+        await this._loadProject(data.project);
+      } else if (this.currentProjectName === data.project) {
         await this._loadProject(data.project);
       }
     } else {
       await this.refreshProjectList();
       if (this.currentProjectName) {
         try { await this._loadProject(this.currentProjectName); } catch {}
+      }
+    }
+    this._notify();
+  }
+
+  async _handleRemoteProjectCreated(data) {
+    await this.refreshProjectList();
+    // Auto-select the newly created project
+    if (data && data.name) {
+      await this._loadProject(data.name);
+    }
+    this._notify();
+  }
+
+  async _handleRemoteProjectDeleted(data) {
+    await this.refreshProjectList();
+    if (data && this.currentProjectName === data.deleted) {
+      this.currentProjectName = this.projectList.length ? this.projectList[0].name : null;
+      if (this.currentProjectName) {
+        await this._loadProject(this.currentProjectName);
+      } else {
+        this.currentProject = null;
       }
     }
     this._notify();
