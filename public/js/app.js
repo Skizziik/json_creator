@@ -1126,16 +1126,80 @@ class App {
 
   _showFAQModal() {
     const faqData = [
-      ['What is Dataset Builder?', 'A tool for creating structured JSON datasets for RAG (Retrieval-Augmented Generation) systems. You organize knowledge into projects, categories and chunks, then export it as JSON.'],
-      ['How do I create a project?', 'Click the <strong>+</strong> button in the top bar. Give your project a name — it will also be used as the filename on export.'],
-      ['What are categories?', 'Categories are folders that help you organize chunks by topic. Click <strong>+ New Category</strong> in the sidebar to create one.'],
-      ['What is a chunk?', 'A chunk is a single piece of knowledge with a unique <strong>ID</strong> and <strong>text</strong> content. It\'s the building block of your dataset.'],
-      ['Can I use duplicate chunk names?', 'No — each chunk ID must be unique within a project. If you need a similar name, add a suffix like <strong>_1</strong>, <strong>_2</strong>, etc.'],
-      ['What\'s the text character limit?', 'Each chunk supports up to <strong>2000 characters</strong>. The counter below the text field shows how many you\'ve used.'],
-      ['How do I export my dataset?', 'Click the <strong>Forge JSON</strong> button in the top-right corner. Your browser will download a .json file with all project data.'],
-      ['How do I import an existing dataset?', 'Click the <strong>upload</strong> button in the top bar and select a .json file exported from Dataset Builder.'],
-      ['What is the Session Code?', 'The session code lets you connect <strong>Claude Code (MCP)</strong> to this web app. Share the code with Claude and it can create projects, categories and chunks that appear here in real-time.'],
-      ['Where is my data stored?', 'Data is stored as <strong>JSON files on the server</strong>. You can export anytime to back up your work.'],
+      // ---- Basics ----
+      ['What is Dataset Builder?',
+        'A tool for building structured <strong>JSON datasets for RAG</strong> (Retrieval-Augmented Generation) pipelines. ' +
+        'Organize knowledge into projects, categories, and chunks — then export as a flat JSON array ready for embedding and retrieval.'],
+      ['How do I create a project?',
+        'Click the <strong>+</strong> button in the top bar and enter a name. ' +
+        'The project name is also used as the filename when you export.'],
+      ['What are categories?',
+        'Categories are folders that group related chunks — for example <em>Mobs</em>, <em>Weapons</em>, or <em>Biomes</em>. ' +
+        'Click <strong>+ New Category</strong> in the sidebar to create one. You can rename or delete categories at any time.'],
+      ['What is a chunk?',
+        'A chunk is a single knowledge entry with a unique <strong>ID</strong>, <strong>text</strong> content, ' +
+        '<strong>metadata</strong> (page title, source, license), and optional <strong>custom fields</strong>. ' +
+        'Chunks are the building blocks of your dataset.'],
+      ['Can I use duplicate chunk IDs?',
+        'No — each chunk ID must be unique across the entire project. ' +
+        'If you need similar names, add a suffix like <strong>_1</strong>, <strong>_2</strong>, etc. ' +
+        'When duplicating a chunk, a <strong>_copy</strong> suffix is added automatically.'],
+      ['What\'s the text character limit?',
+        'Each chunk supports up to <strong>2000 characters</strong>. ' +
+        'The counter below the text field turns <strong>yellow at 1800</strong> and <strong>red at 2000</strong>.'],
+      // ---- Custom Fields ----
+      ['What are Custom Fields?',
+        'Custom fields let you add any extra metadata beyond the standard three (page title, source, license). ' +
+        'Click <strong>Add Custom Field</strong> under the chunk editor, enter a field name and value, then save. ' +
+        'On export, custom fields are merged into the <code>metadata</code> object alongside standard fields.'],
+      // ---- Import & Export ----
+      ['How do I export my dataset?',
+        'Click the <strong>Forge JSON</strong> button in the top bar. ' +
+        'Your browser downloads a <code>.json</code> file — a flat array of chunks with all metadata merged, ready for RAG pipelines. ' +
+        'You can also export a single category via the category context menu.'],
+      ['How do I import an existing dataset?',
+        'Click the <strong>upload icon</strong> in the top bar and select a <code>.json</code> file. ' +
+        'The file should be an array of objects with <code>id</code>, <code>text</code>, and <code>metadata</code> fields. ' +
+        'Imported chunks go into an <strong>Imported</strong> category (or one you specify via MCP).'],
+      // ---- Version History ----
+      ['What is Version History?',
+        'Every change you make — adding chunks, editing metadata, renaming categories — creates a <strong>commit</strong> in the project\'s history. ' +
+        'Click the <strong>clock icon</strong> in the top bar to open the history drawer and see a timeline of all changes.'],
+      ['How do diffs work?',
+        'When you expand a commit, the app shows a colored diff:<br>' +
+        '<strong style="color:#4ade80;">Green</strong> — added categories or chunks<br>' +
+        '<strong style="color:#f87171;">Red</strong> — deleted categories or chunks<br>' +
+        '<strong style="color:#fbbf24;">Yellow</strong> — modified chunks (shows exactly which fields changed and their old → new values)'],
+      ['Can I undo changes?',
+        'Yes — open Version History, find the commit you want to go back to, and click <strong>Rollback to this point</strong>. ' +
+        'The project is restored to that commit\'s state. A new "rollback" commit is created, so you can always undo the rollback itself.'],
+      ['What does "Browser" vs "MCP" mean in history?',
+        'Each commit shows who made the change: ' +
+        'a <strong style="color:#60a5fa;">blue dot</strong> means it was done in the browser, ' +
+        'a <strong style="color:#4ade80;">green dot</strong> means it came from Claude Code via MCP. ' +
+        'This helps track who changed what during collaborative sessions.'],
+      // ---- MCP & Session ----
+      ['What is MCP?',
+        '<strong>MCP (Model Context Protocol)</strong> lets you use <strong>Claude Code</strong> as an AI assistant for building datasets. ' +
+        'Install the companion MCP server: <code>npm i -g tryll-dataset-builder-mcp</code>, then add it to Claude Code: ' +
+        '<code>claude mcp add dataset-builder -- npx tryll-dataset-builder-mcp</code>. ' +
+        'Claude can then create projects, add chunks, parse URLs, and more — all via natural language.'],
+      ['What is the Session Code?',
+        'The 6-character code in the top bar connects your browser to Claude Code for <strong>real-time sync</strong>. ' +
+        'Tell Claude: <em>"Connect to session ABC123"</em> — after that, any changes Claude makes appear instantly in your browser, and vice versa. ' +
+        'History tracks whether each change was made by the browser or by MCP.'],
+      ['What can Claude do via MCP?',
+        'Claude has <strong>27 tools</strong> including: create/delete projects, manage categories, add/edit/delete chunks, ' +
+        'bulk-add chunks, parse web pages into chunks, search chunks, import/export JSON, ' +
+        'bulk-update metadata, merge projects, view version history, and rollback to any commit.'],
+      // ---- Data & Storage ----
+      ['Where is my data stored?',
+        'Data is stored as <strong>JSON files on the server</strong> (<code>data/</code> folder). ' +
+        'Each project has a <code>.json</code> data file and a <code>.history.json</code> file for version history. ' +
+        'Export regularly to back up your work — the server filesystem may be reset on redeployment.'],
+      ['What does the exported JSON look like?',
+        'A flat array where each chunk\'s standard metadata and custom fields are merged into one <code>metadata</code> object:<br>' +
+        '<code>[{ "id": "...", "text": "...", "metadata": { "page_title": "...", "source": "...", ... } }]</code>'],
     ];
 
     const faqItems = faqData.map(([q, a]) => `
