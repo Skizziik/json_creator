@@ -1045,34 +1045,27 @@ class App {
     }
   }
 
-  async _addCustomField() {
-    if (!this.selected) return;
-    await this._saveCurrentChunkSilent();
-    const chunk = this.store.getChunk(this.selected.categoryId, this.selected.chunkUid);
-    if (!chunk) return;
-    if (!chunk.customFields) chunk.customFields = [];
-    chunk.customFields.push({ key: '', value: '' });
-    // Save updated custom fields to server
-    await this.store.updateChunk(this.selected.categoryId, this.selected.chunkUid, {
-      id: chunk.id, text: chunk.text, metadata: chunk.metadata, customFields: chunk.customFields,
-    });
-    this._renderContent();
-    setTimeout(() => {
-      const inputs = $$('.custom-field-key');
-      if (inputs.length) inputs[inputs.length - 1].focus();
-    }, 50);
+  _addCustomField() {
+    const container = $('#customFieldsContainer');
+    if (!container) return;
+    const index = container.querySelectorAll('.custom-field-row').length;
+    const row = document.createElement('div');
+    row.className = 'custom-field-row';
+    row.innerHTML = `
+      <input class="field-input custom-field-key" type="text" placeholder="Field name" data-cf-index="${index}" data-cf-part="key">
+      <input class="field-input" type="text" placeholder="Value" data-cf-index="${index}" data-cf-part="value">
+      <button class="btn-icon btn-icon--danger" data-action="remove-cf" data-cf-index="${index}" title="Remove field"><i class="bi bi-x-lg"></i></button>`;
+    container.appendChild(row);
+    row.querySelector('.custom-field-key').focus();
   }
 
-  async _removeCustomField(index) {
-    if (!this.selected) return;
-    await this._saveCurrentChunkSilent();
-    const chunk = this.store.getChunk(this.selected.categoryId, this.selected.chunkUid);
-    if (!chunk || !chunk.customFields) return;
-    chunk.customFields.splice(index, 1);
-    await this.store.updateChunk(this.selected.categoryId, this.selected.chunkUid, {
-      id: chunk.id, text: chunk.text, metadata: chunk.metadata, customFields: chunk.customFields,
+  _removeCustomField(index) {
+    const rows = $$('.custom-field-row');
+    if (rows[index]) rows[index].remove();
+    // Re-index remaining rows
+    $$('.custom-field-row').forEach((row, i) => {
+      row.querySelectorAll('[data-cf-index]').forEach(el => el.dataset.cfIndex = i);
     });
-    this._renderContent();
   }
 
   async _saveCurrentChunkSilent() {
