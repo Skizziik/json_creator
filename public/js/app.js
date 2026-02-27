@@ -1369,7 +1369,7 @@ class App {
         <div class="history-diff-list">
           <div class="history-diff history-diff--modified">
             <i class="bi bi-info-circle history-diff-icon"></i>
-            <span class="history-diff-text">Initial commit (no previous state)</span>
+            <span class="history-diff-text">No visible changes</span>
           </div>
         </div>
         <button class="history-rollback-btn" data-commit-id="${this._escAttr(commitId)}">
@@ -1426,7 +1426,16 @@ class App {
   _computeDiff(prev, curr) {
     const diffs = [];
 
-    if (!prev) return diffs; // no previous snapshot = initial commit
+    if (!prev) {
+      // No previous snapshot — show current state as "added"
+      for (const cat of curr.categories || []) {
+        diffs.push({ type: 'added', text: `Category "${cat.name}" (${cat.chunks.length} chunks)` });
+        for (const ch of cat.chunks) {
+          diffs.push({ type: 'added', text: `Chunk "${ch.id}" in "${cat.name}"` });
+        }
+      }
+      return diffs;
+    }
 
     const prevCats = new Map((prev.categories || []).map(c => [c.id, c]));
     const currCats = new Map((curr.categories || []).map(c => [c.id, c]));
