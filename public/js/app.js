@@ -1502,6 +1502,23 @@ class App {
           if (pv !== cv) changes.push(`${k}: "${pv || ''}" → "${cv || ''}"`);
         }
 
+        // Compare custom fields
+        const prevCf = (prevCh.customFields || []);
+        const currCf = (currCh.customFields || []);
+        const prevCfMap = new Map(prevCf.map(f => [f.key, f.value]));
+        const currCfMap = new Map(currCf.map(f => [f.key, f.value]));
+        const allCfKeys = new Set([...prevCfMap.keys(), ...currCfMap.keys()]);
+        for (const k of allCfKeys) {
+          if (!k) continue;
+          const pv = prevCfMap.get(k);
+          const cv = currCfMap.get(k);
+          if (pv !== cv) {
+            if (pv === undefined) changes.push(`${k}: added "${cv}"`);
+            else if (cv === undefined) changes.push(`${k}: removed`);
+            else changes.push(`${k}: "${pv}" → "${cv}"`);
+          }
+        }
+
         if (changes.length > 0) {
           diffs.push({ type: 'modified', text: `Chunk "${currCh.id}" in "${currCat.name}": ${changes.join(', ')}` });
         }
